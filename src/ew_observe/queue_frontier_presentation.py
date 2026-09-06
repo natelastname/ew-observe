@@ -197,8 +197,20 @@ def _canonical_machine_order(trace: QueueHeadTrace) -> tuple[ExactQueueHead, ...
     return (*competitors, trace.winner_head)
 
 
+def _reduced_threat_payload(trace: QueueHeadTrace) -> list[dict[str, object]]:
+    return [
+        {
+            "value": threat.value,
+            "support": sorted(threat.support),
+            "used_at": threat.used_at,
+        }
+        for threat in trace.decision.threats
+    ]
+
+
 def _payload(trace: QueueHeadTrace) -> dict[str, object]:
     decision = trace.decision
+    reduced_threats = _reduced_threat_payload(trace)
     return {
         "type": "ew-decision-queue-frontier-trace",
         "view": "queue-frontiers",
@@ -210,11 +222,17 @@ def _payload(trace: QueueHeadTrace) -> dict[str, object]:
         },
         "legal_carriers": sorted(decision.legal_carriers),
         "least_unused": decision.least_unused,
+        "least_unintroduced_prime": decision.least_unintroduced_prime,
+        "candidate_universe": {
+            "kind": "fresh-prime-reduced",
+            "prime_ceiling": decision.least_unintroduced_prime,
+            "primitive_structural_candidates_pruned_below_winner": (
+                decision.fresh_frontier_pruned_threats
+            ),
+        },
         "queues": [_queue_payload(queue) for queue in _canonical_machine_order(trace)],
-        "exhaustive_threats": [
-            {"value": threat.value, "support": sorted(threat.support), "used_at": threat.used_at}
-            for threat in decision.threats
-        ],
+        "reduced_threats": reduced_threats,
+        "exhaustive_threats": reduced_threats,
     }
 
 
@@ -224,10 +242,13 @@ def _flat_rows(trace: QueueHeadTrace) -> list[dict[str, object]]:
         rows.append(
             {
                 "n": trace.decision.n,
+                "least_unintroduced_prime": trace.decision.least_unintroduced_prime,
                 "kind": "winner" if queue.is_winner else "loser",
                 "display_value": queue.frontier_value,
                 "queue_depth": queue.depth,
-                "last_used_value": queue.last_used_value if queue.last_used_value is not None else "",
+                "last_used_value": (
+                    queue.last_used_value if queue.last_used_value is not None else ""
+                ),
                 "current_head": queue.value,
                 "support": _primes(queue.support),
                 "new_primes": _primes(queue.support - trace.decision.previous_support),
@@ -269,8 +290,15 @@ def _render_text(
     )
     lines = [
         f"EW step {decision.n}: choose a_{decision.n} = {decision.winner}",
-        f"least unused = {decision.least_unused}; legal carry primes = {_human_primes(decision.legal_carriers)}",
-        f"queue-frontier mode: one row per represented exact-support queue; human sort={sort_order}",
+        (
+            f"least unused = {decision.least_unused}; "
+            f"fresh-prime ceiling Q = {decision.least_unintroduced_prime}; "
+            f"legal carry primes = {_human_primes(decision.legal_carriers)}"
+        ),
+        (
+            "queue-frontier mode: one row per represented exact-support queue; "
+            f"human sort={sort_order}"
+        ),
         "",
     ]
 
@@ -281,7 +309,9 @@ def _render_text(
         lines.append("")
 
     if len(tables) > 1:
-        lines.append("Each table repeats B, A, and W; prime columns are local to the losing queues shown.")
+        lines.append(
+            "Each table repeats B, A, and W; prime columns are local to the losing queues shown."
+        )
     lines.extend(
         (
             "depth = number of values already serviced in that exact-support queue before this step",
@@ -293,19 +323,34 @@ def _render_text(
     )
 
     lines.append(
-        f"Compressed {len(decision.threats)} already-used threats into {len(trace.heads)} represented exact-support queues."
+        f"Compressed {len(decision.threats)} reduced already-used threats into "
+        f"{len(trace.heads)} represented exact-support queues."
     )
+    if decision.fresh_frontier_pruned_threats:
+        lines.append(
+            f"Fresh-prime frontier discarded {decision.fresh_frontier_pruned_threats} "
+            "primitive structural candidates below the winner."
+        )
     if diagnostics:
         lines.extend(("", "Queue race details"))
+        lines.append(
+            f"  fresh-prime ceiling Q_{decision.n}={decision.least_unintroduced_prime}"
+        )
+        lines.append(
+            "  primitive structural candidates pruned below winner="
+            f"{decision.fresh_frontier_pruned_threats}"
+        )
         for queue in _canonical_machine_order(trace):
             if queue.is_winner:
                 lines.append(
-                    f"  W support={{{_primes(queue.support)}}}: head={queue.value}, depth={queue.depth}"
+                    f"  W support={{{_primes(queue.support)}}}: head={queue.value}, "
+                    f"depth={queue.depth}"
                 )
             else:
                 lines.append(
-                    f"  L support={{{_primes(queue.support)}}}: last-used={queue.last_used_value}, "
-                    f"current-head={queue.value}, depth={queue.depth}"
+                    f"  L support={{{_primes(queue.support)}}}: "
+                    f"last-used={queue.last_used_value}, current-head={queue.value}, "
+                    f"depth={queue.depth}"
                 )
 
     return "\n".join(lines) + "\n"
@@ -315,7 +360,11 @@ def _render_markdown(trace: QueueHeadTrace, *, sort_order: str) -> str:
     lines = [
         f"## EW step {trace.decision.n}: queue-frontier view",
         "",
-        f"Human sort: `{sort_order}`. The context rows `B`, `A`, and `W` are fixed above the losing queues.",
+        (
+            f"Fresh-prime ceiling: `Q = {trace.decision.least_unintroduced_prime}`. "
+            f"Human sort: `{sort_order}`. The context rows `B`, `A`, and `W` are "
+            "fixed above the losing queues."
+        ),
         "",
         "| kind | displayed value | depth | current head | support | collapsed threats |",
         "| --- | ---: | ---: | ---: | --- | --- |",
@@ -323,7 +372,8 @@ def _render_markdown(trace: QueueHeadTrace, *, sort_order: str) -> str:
     winner = trace.winner_head
     lines.append(
         f"| winner | {trace.decision.winner} | {winner.depth} | {winner.value} | "
-        f"`{_primes(winner.support)}` | {', '.join(str(v) for v in winner.source_threats) or '—'} |"
+        f"`{_primes(winner.support)}` | "
+        f"{', '.join(str(v) for v in winner.source_threats) or '—'} |"
     )
     for queue in ordered_queue_frontiers(trace, sort_order=sort_order):
         collapsed = ", ".join(str(value) for value in queue.source_threats) or "—"
@@ -346,7 +396,7 @@ def render_queue_frontier_trace(
     """Render one representative row per exact queue using its serviced frontier.
 
     Human sort options affect only text/Markdown. JSON/TSV/CSV use a stable
-    canonical order and preserve the complete queue/frontier/threat data.
+    canonical order and preserve the complete reduced queue/frontier/threat data.
     """
 
     format_ = OutputFormat(output_format)
