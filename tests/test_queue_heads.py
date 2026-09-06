@@ -3,12 +3,27 @@ import json
 import ew_observe.cli as cli_module
 from ew_observe import EWObserver
 from ew_observe.queue_head_presentation import ordered_queue_heads, render_queue_head_trace
+from ew_observe.queue_heads import current_exact_support_head
 
 
 EW_PREFIX_23 = [
     1, 2, 6, 15, 35, 14, 12, 33, 55, 10, 18, 21, 77, 22, 20,
     45, 39, 26, 28, 63, 51, 34, 38,
 ]
+
+
+def test_current_head_uses_full_used_set_not_visible_threat_count():
+    class FakeObserver:
+        def used_at_before(self, value: int, n: int) -> int | None:
+            return 1 if value in {6, 12, 18, 24} else None
+
+    depth, head = current_exact_support_head(
+        FakeObserver(),
+        n=100,
+        support=frozenset({2, 3}),
+    )
+
+    assert (depth, head) == (4, 36)
 
 
 def test_step_11_collapses_old_members_to_current_queue_heads():
