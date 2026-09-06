@@ -9,6 +9,7 @@ from .exhaustive_human_presentation import render_exhaustive_human_trace
 from .lifecycle_presentation import render_candidate_lifecycle
 from .observer import EWObserver
 from .presentation import OutputFormat, render_candidate_audit, render_decision_trace
+from .queue_frontier_markdown import render_queue_frontier_markdown
 from .queue_frontier_presentation import HUMAN_SORT_ORDERS, render_queue_frontier_trace
 from .queue_head_human_presentation import render_queue_head_human_trace
 from .queue_head_presentation import render_queue_head_trace
@@ -99,10 +100,6 @@ def step(
     Formats: text (default), markdown, json, tsv, csv.
     """
 
-    if sort not in HUMAN_SORT_ORDERS:
-        raise ValueError(
-            f"--sort must be one of {', '.join(HUMAN_SORT_ORDERS)}"
-        )
     if queue_heads and exhaustive_threats:
         raise ValueError("use either --queue-heads or --exhaustive-threats, not both")
 
@@ -111,6 +108,10 @@ def step(
     human = _is_human(format_)
 
     if human:
+        if sort not in HUMAN_SORT_ORDERS:
+            raise ValueError(
+                f"--sort must be one of {', '.join(HUMAN_SORT_ORDERS)}"
+            )
         if exhaustive_threats or not queue_depth:
             rendered = render_exhaustive_human_trace(
                 observer.trace_step(n),
@@ -130,14 +131,22 @@ def step(
                 sort_order=sort,
             )
         else:
-            rendered = render_queue_frontier_trace(
-                observer.trace_queue_heads(n),
-                output_format=format_,
-                diagnostics=diagnostics,
-                max_width=max_width,
-                candidates_per_table=candidates_per_table,
-                sort_order=sort,
-            )
+            queue_trace = observer.trace_queue_heads(n)
+            if format_ is OutputFormat.MARKDOWN:
+                rendered = render_queue_frontier_markdown(
+                    queue_trace,
+                    candidates_per_table=candidates_per_table,
+                    sort_order=sort,
+                )
+            else:
+                rendered = render_queue_frontier_trace(
+                    queue_trace,
+                    output_format=format_,
+                    diagnostics=diagnostics,
+                    max_width=max_width,
+                    candidates_per_table=candidates_per_table,
+                    sort_order=sort,
+                )
     else:
         # Human-only flags deliberately cannot weaken or reorder machine data.
         if exhaustive_threats:
