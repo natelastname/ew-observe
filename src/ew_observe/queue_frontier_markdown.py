@@ -30,6 +30,7 @@ def render_queue_frontier_markdown(
     lines = [
         f"## EW step {d.n}: queue-frontier view",
         "",
+        f"Fresh-prime ceiling: `Q_{d.n} = {d.least_unintroduced_prime}`.",
         f"Human sort: `{sort_order}`.",
         "",
     ]
@@ -51,4 +52,9 @@ def render_queue_frontier_markdown(
                 f"`{_support(queue.support)}` | {queue.value} |"
             )
         lines.append("")
+    if d.fresh_frontier_pruned_threats:
+        lines.append(
+            f"Fresh-prime reduction pruned `{d.fresh_frontier_pruned_threats}` "
+            "primitive structural candidates below the winner."
+        )
     return "\n".join(lines)
