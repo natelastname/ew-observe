@@ -62,6 +62,10 @@ Other
   ?             toggle this help
   q             quit
 
+Tables are automatically split to fit the current terminal width. Every
+mini-table repeats B, A, and W. Horizontal scrolling remains available for an
+individual table that is intrinsically wider than the terminal.
+
 The viewer only changes human presentation. It never mutates or weakens the
 canonical decision/queue trace used for machine-readable output.
 """
@@ -100,7 +104,7 @@ class ViewerSession:
         self.state = ViewerState(n=initial_n)
         self._trace_loader = trace_loader
         self._cache: dict[int, QueueHeadTrace] = {}
-        self._document_cache: dict[tuple[int, bool, str, str, bool], str] = {}
+        self._document_cache: dict[tuple[int, bool, str, str, bool, int], str] = {}
         self._error: str | None = None
         self._cache[initial_n] = trace_loader(initial_n)
 
@@ -126,7 +130,7 @@ class ViewerSession:
             parts.append(f"error:{self._error}")
         return "  |  ".join(parts)
 
-    def _document_key(self) -> tuple[int, bool, str, str, bool]:
+    def _document_key(self, render_width: int) -> tuple[int, bool, str, str, bool, int]:
         state = self.state
         return (
             state.n,
@@ -134,15 +138,22 @@ class ViewerSession:
             state.queue_representation,
             state.sort_order,
             state.diagnostics,
+            render_width,
         )
 
-    def document(self) -> str:
-        """Render the complete un-cropped human document for current state."""
+    def document(self, *, render_width: int = 160) -> str:
+        """Render the complete un-cropped human document for current state.
+
+        ``render_width`` is a soft table-width target. The existing human
+        renderers use it to split the body into multiple self-contained tables,
+        each repeating B, A, and W.
+        """
 
         if self.state.show_help:
             return HELP_TEXT
 
-        key = self._document_key()
+        render_width = max(1, render_width)
+        key = self._document_key(render_width)
         cached = self._document_cache.get(key)
         if cached is not None:
             return cached
@@ -153,7 +164,7 @@ class ViewerSession:
                 trace.decision,
                 output_format=OutputFormat.TEXT,
                 diagnostics=self.state.diagnostics,
-                max_width=0,
+                max_width=render_width,
                 candidates_per_table=0,
                 sort_order=self.state.sort_order,
             )
@@ -162,7 +173,7 @@ class ViewerSession:
                 trace,
                 output_format=OutputFormat.TEXT,
                 diagnostics=self.state.diagnostics,
-                max_width=0,
+                max_width=render_width,
                 candidates_per_table=0,
                 sort_order=self.state.sort_order,
             )
@@ -171,7 +182,7 @@ class ViewerSession:
                 trace,
                 output_format=OutputFormat.TEXT,
                 diagnostics=self.state.diagnostics,
-                max_width=0,
+                max_width=render_width,
                 candidates_per_table=0,
                 sort_order=self.state.sort_order,
             )
@@ -288,7 +299,7 @@ def _frame(session: ViewerSession, *, width: int, height: int) -> Group:
     height = max(3, height)
     body_height = max(1, height - 2)
     body = viewport_lines(
-        session.document(),
+        session.document(render_width=width),
         session.state,
         width=width,
         height=body_height,
