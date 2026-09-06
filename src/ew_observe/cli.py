@@ -14,7 +14,7 @@ from .presentation import OutputFormat
 from .queue_frontier_markdown import render_queue_frontier_markdown
 from .queue_frontier_presentation import HUMAN_SORT_ORDERS, render_queue_frontier_trace
 from .queue_head_human_presentation import render_queue_head_human_trace
-from .queue_head_presentation import render_queue_head_trace
+from .queue_head_machine_presentation import render_queue_head_trace
 from .viewer import run_viewer
 
 app = App()
