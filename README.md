@@ -62,11 +62,21 @@ uv run ew-observe step 11
 uv run ew-observe candidate 11 14
 ```
 
-The default `text` format is a sparse prime-coordinate incidence table in the style of the `lex-earliest-seqs` tables. It keeps all prime columns on one line by default, even when that produces a very wide table. This makes the entire local support pattern visible at once. Width-based paneling is available only when explicitly requested with a positive `--max-width`, for example:
+The default `text` format is a sparse prime-coordinate incidence view in the style of the `lex-earliest-seqs` tables. Rather than splitting one decision by prime columns, it groups consecutive candidate rows into smaller self-contained tables. Every table repeats the two incoming terms `B` and `A`, and its prime columns are exactly the primes present in `B`, `A`, and the candidate rows shown in that table.
+
+By default `step` uses a soft line-width target of 160 characters and greedily adds candidates until adding the next one would make that mini-table wider. A single candidate is never split. Disable automatic width grouping with `--max-width 0`:
 
 ```bash
-uv run ew-observe step 1000 --max-width 100
+uv run ew-observe step 1000 --max-width 0
 ```
+
+You can instead (or additionally) set an explicit candidate-row limit:
+
+```bash
+uv run ew-observe step 1000 --candidates-per-table 12
+```
+
+When both `--max-width` and `--candidates-per-table` are positive, whichever bound is reached first starts a new table.
 
 The decision table uses row roles `B` (two-back), `A` (previous), `T` (smaller locally admissible threat), and `W` (winner). On `T` and `W` rows, a bare exponent is a prime shared with the predecessor and `+e` marks a newly introduced prime with exponent `e`. `B` and `A` rows use ordinary prime exponents.
 
