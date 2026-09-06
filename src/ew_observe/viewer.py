@@ -11,8 +11,6 @@ import os
 import select
 import shutil
 import sys
-import termios
-import tty
 from collections.abc import Callable
 from dataclasses import dataclass
 
@@ -23,7 +21,7 @@ from rich.text import Text
 from .exhaustive_human_presentation import render_exhaustive_human_trace
 from .observer import EWObserver
 from .presentation import OutputFormat
-from .queue_frontier_presentation import HUMAN_SORT_ORDERS, render_queue_frontier_trace
+from .queue_frontier_presentation import render_queue_frontier_trace
 from .queue_head_human_presentation import render_queue_head_human_trace
 from .queue_heads import QueueHeadTrace
 
@@ -102,6 +100,7 @@ class ViewerSession:
         self.state = ViewerState(n=initial_n)
         self._trace_loader = trace_loader
         self._cache: dict[int, QueueHeadTrace] = {}
+        self._document_cache: dict[tuple[int, bool, str, str, bool], str] = {}
         self._error: str | None = None
         self._cache[initial_n] = trace_loader(initial_n)
 
@@ -127,15 +126,30 @@ class ViewerSession:
             parts.append(f"error:{self._error}")
         return "  |  ".join(parts)
 
+    def _document_key(self) -> tuple[int, bool, str, str, bool]:
+        state = self.state
+        return (
+            state.n,
+            state.collapsed,
+            state.queue_representation,
+            state.sort_order,
+            state.diagnostics,
+        )
+
     def document(self) -> str:
         """Render the complete un-cropped human document for current state."""
 
         if self.state.show_help:
             return HELP_TEXT
 
+        key = self._document_key()
+        cached = self._document_cache.get(key)
+        if cached is not None:
+            return cached
+
         trace = self.trace
         if not self.state.collapsed:
-            return render_exhaustive_human_trace(
+            rendered = render_exhaustive_human_trace(
                 trace.decision,
                 output_format=OutputFormat.TEXT,
                 diagnostics=self.state.diagnostics,
@@ -143,8 +157,8 @@ class ViewerSession:
                 candidates_per_table=0,
                 sort_order=self.state.sort_order,
             )
-        if self.state.queue_representation == "head":
-            return render_queue_head_human_trace(
+        elif self.state.queue_representation == "head":
+            rendered = render_queue_head_human_trace(
                 trace,
                 output_format=OutputFormat.TEXT,
                 diagnostics=self.state.diagnostics,
@@ -152,14 +166,17 @@ class ViewerSession:
                 candidates_per_table=0,
                 sort_order=self.state.sort_order,
             )
-        return render_queue_frontier_trace(
-            trace,
-            output_format=OutputFormat.TEXT,
-            diagnostics=self.state.diagnostics,
-            max_width=0,
-            candidates_per_table=0,
-            sort_order=self.state.sort_order,
-        )
+        else:
+            rendered = render_queue_frontier_trace(
+                trace,
+                output_format=OutputFormat.TEXT,
+                diagnostics=self.state.diagnostics,
+                max_width=0,
+                candidates_per_table=0,
+                sort_order=self.state.sort_order,
+            )
+        self._document_cache[key] = rendered
+        return rendered
 
     def _change_step(self, n: int) -> None:
         if n < 3:
@@ -329,6 +346,12 @@ def run_viewer(initial_n: int, term_loader: TermLoader) -> None:
 
     if not sys.stdin.isatty() or not sys.stdout.isatty():
         raise ValueError("ew-observe view requires an interactive terminal")
+
+    try:
+        import termios
+        import tty
+    except ImportError as exc:
+        raise ValueError("ew-observe view currently requires a POSIX terminal") from exc
 
     session = ViewerSession(initial_n, _trace_loader(term_loader))
     console = Console()
