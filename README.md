@@ -10,7 +10,7 @@ Its purpose is **not** to become the fastest EW term generator. Its purpose is t
 
 It intentionally does **not** depend on `enots-wolley-2`. If useful, `enots-wolley-2` can later depend on `ew-observe` for research analyses.
 
-## First milestone: exact decision certificates
+## Exact decision certificates
 
 For a greedy choice
 
@@ -70,6 +70,49 @@ uv run ew-observe step 1000 --max-width 100
 
 The decision table uses row roles `B` (two-back), `A` (previous), `T` (smaller locally admissible threat), and `W` (winner). On `T` and `W` rows, a bare exponent is a prime shared with the predecessor and `+e` marks a newly introduced prime with exponent `e`. `B` and `A` rows use ordinary prime exponents.
 
+## Candidate lifecycle microscope
+
+A single decision trace is state-centric. The lifecycle microscope fixes one integer and follows it while the real EW state changes around it:
+
+```python
+trace = observer.trace_candidate_lifecycle(18, start=6, stop=12)
+```
+
+Each lifecycle row records:
+
+- whether the tracked value is `blocked`, `live-lost`, `selected`, or already `used`;
+- all local rejection reasons;
+- its exact rank among currently unused locally admissible candidates when live;
+- every currently live value below it when it loses, with the actual greedy winner singled out;
+- the current legal carrier set `P(A) \\ P(B)`;
+- the actual support transition `A -> W`: retained, introduced, and dropped primes.
+
+The primes introduced by the actual winner are especially important: they are exactly the legal carrier face for the *next* EW step. Thus a lifecycle table makes carrier-face rotation visible directly.
+
+The generic CLI takes an explicit stop:
+
+```bash
+uv run ew-observe track 18 --start 6 --stop 12
+```
+
+For prime-debut investigations it can resolve the stopping index automatically:
+
+```bash
+uv run ew-observe track 734 --start 745 --until-prime-debut 367
+```
+
+If `--start` is omitted, `track` shows the final 16 states by default; change that with `--context`. `--search-limit` bounds automatic prime-debut lookup.
+
+The text table uses compact transition notation:
+
+- `=p` means prime `p` is retained from predecessor to winner;
+- `+p` means `p` is introduced by the winner and therefore belongs to the next legal carrier face;
+- `-p` means `p` is dropped.
+
+Human text may abbreviate a long beater list, but JSON/CSV/TSV always preserve the exact complete list.
+
+## Output formats
+
 All microscope commands support explicit output formats:
 
 ```bash
@@ -80,26 +123,28 @@ uv run ew-observe step 11 --format tsv
 uv run ew-observe step 11 --format csv
 
 uv run ew-observe candidate 11 14 --format json
+uv run ew-observe track 18 --start 6 --stop 12 --format json
 ```
 
 - `text` is optimized for terminal reading;
 - `markdown` is retained for research notes and generated artifacts;
-- `json` preserves the complete structured decision certificate, including prime sets and rejection reasons;
-- `tsv` and `csv` emit one flat row per threat/winner for analysis pipelines.
+- `json` preserves complete structured mathematical data;
+- `tsv` and `csv` emit flat analysis-friendly rows.
 
 `--diagnostics` adds overlapping exhaustive rejection counts to human-oriented `step` output. The structured JSON representation always includes those counts.
 
 For the known early step `a_11 = 18`, the threat ledger contains exactly `6`, `12`, and `14`, paid at indices `3`, `7`, and `6` respectively, followed by the winning row for `18`.
 
-A trace fails loudly if the supplied prefix is inconsistent with the greedy rule, either because the observed winner is inadmissible/already used or because an unused admissible value lies below it.
+A decision trace fails loudly if the supplied prefix is inconsistent with the greedy rule, either because the observed winner is inadmissible/already used or because an unused admissible value lies below it. A candidate lifecycle similarly rejects a prefix if a tracked live candidate is smaller than the claimed winner, or if the claimed winner itself is inadmissible.
 
 ## Planned layers
 
 1. **Decision engine** — exact reconstruction of individual EW greedy choices.
-2. **Occurrence detectors** — thin definitions of phenomena such as parity defects, canonical `2Q` debuts, `(c-2)q -> cq` spoke maturation, and `Q`-star packets.
-3. **Dossiers** — prime-incidence chronology, historical ancestry, queue/spoke state, and exact local counterfactuals for one occurrence.
-4. **Matched controls and near misses** — compare events with structurally similar non-events and states one condition away from an event.
-5. **Certificate compression** — identify a small common set of exact conditions sufficient to force an observed normal form.
+2. **Candidate lifecycles** — follow one fixed integer through live, blocked, losing, selected, and carrier-face-rotation states.
+3. **Occurrence detectors** — thin definitions of phenomena such as parity defects, canonical `2Q` debuts, `(c-2)q -> cq` spoke maturation, and `Q`-star packets.
+4. **Dossiers** — prime-incidence chronology, historical ancestry, queue/spoke state, and exact local counterfactuals for one occurrence.
+5. **Matched controls and near misses** — compare events with structurally similar non-events and states one condition away from an event.
+6. **Certificate compression** — identify a small common set of exact conditions sufficient to force an observed normal form.
 
 The success criterion is not the number of terms inspected. It is whether the tool reduces an empirical mystery to a smaller set of theorem-shaped obligations.
 
