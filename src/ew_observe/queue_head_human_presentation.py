@@ -127,9 +127,10 @@ def render_queue_head_human_trace(
         candidates_per_table=candidates_per_table,
         sort_order=sort_order,
     )
+    d = trace.decision
     if format_ is OutputFormat.TEXT:
         lines = [
-            f"EW step {trace.decision.n}: current-head view; human sort={sort_order}",
+            f"EW step {d.n}: current-head view; Q_{d.n}={d.least_unintroduced_prime}; human sort={sort_order}",
             "",
         ]
         start = 1
@@ -144,12 +145,20 @@ def render_queue_head_human_trace(
             lines.append("Each table repeats B, A, and W.")
         lines.append("role: H=current nonwinning exact-support queue head; W=actual winner")
         if diagnostics:
-            lines.extend(("", f"represented queues: {len(trace.heads)}"))
+            lines.extend(
+                (
+                    "",
+                    f"represented queues: {len(trace.heads)}",
+                    f"fresh-prime ceiling Q_{d.n}: {d.least_unintroduced_prime}",
+                    f"primitive structural candidates pruned below winner: {d.fresh_frontier_pruned_threats}",
+                )
+            )
         return "\n".join(lines) + "\n"
     if format_ is OutputFormat.MARKDOWN:
         lines = [
-            f"## EW step {trace.decision.n}: current-head view",
+            f"## EW step {d.n}: current-head view",
             "",
+            f"Fresh-prime ceiling: `Q_{d.n} = {d.least_unintroduced_prime}`.",
             f"Human sort: `{sort_order}`.",
             "",
         ]
@@ -160,9 +169,9 @@ def render_queue_head_human_trace(
                 (
                     "| role | object | depth | support |",
                     "| --- | ---: | ---: | --- |",
-                    f"| B | {trace.decision.two_back} |  | `{','.join(map(str, sorted(trace.decision.two_back_support)))}` |",
-                    f"| A | {trace.decision.previous} |  | `{','.join(map(str, sorted(trace.decision.previous_support)))}` |",
-                    f"| W | {trace.decision.winner} | {trace.winner_head.depth} | `{','.join(map(str, sorted(trace.winner_head.support)))}` |",
+                    f"| B | {d.two_back} |  | `{','.join(map(str, sorted(d.two_back_support)))}` |",
+                    f"| A | {d.previous} |  | `{','.join(map(str, sorted(d.previous_support)))}` |",
+                    f"| W | {d.winner} | {trace.winner_head.depth} | `{','.join(map(str, sorted(trace.winner_head.support)))}` |",
                 )
             )
             for q in group:
