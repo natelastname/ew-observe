@@ -26,16 +26,45 @@ R=P(A)\setminus P(B)
 
 be the primes of the predecessor that can legally carry the next term. The first implementation target is to reconstruct the exact race among the carrier streams indexed by `R` and produce a certificate explaining why `W` is the least unused admissible integer.
 
-A decision certificate should expose:
+The first-pass implementation deliberately uses the more primitive exhaustive oracle before introducing a carrier-stream decomposition. For every positive integer `x < W` it determines all applicable rejection reasons:
 
-- the supports of `B`, `A`, and `W`;
-- the legal carrier primes `P(A) \\ P(B)`;
-- the least current candidate on each carrier stream;
-- the winning stream and winning value;
-- rejected values and all applicable reasons: already used, no predecessor overlap, two-back mask, or failure to introduce a new prime;
-- exact counterfactual heads for restricted races when requested.
+- `used-before`;
+- `no-predecessor-overlap`;
+- `two-back-conflict`;
+- `no-new-prime`.
 
-The representation should remain compact by default, with rejected stream prefixes expanded only on demand.
+The locally admissible values below `W` form the **threat set**. Greedy minimality requires every threat to have been used earlier. The default human-facing output is therefore the compact **threat ledger**, which records each threat together with its support, retained and introduced primes, and the exact earlier index at which it was paid.
+
+The full exhaustive scan remains available lazily through the Python API and serves as the reference oracle for any later optimized reconstruction.
+
+### Python API
+
+```python
+from ew_observe import EWObserver
+
+observer = EWObserver(terms)
+trace = observer.trace_step(11)
+
+# Exact status of one value against the state before a_11.
+audit = observer.audit_candidate(11, 14)
+
+# Full exhaustive scan from 1 through the observed winner.
+for audit in observer.iter_candidate_audits(11):
+    ...
+```
+
+### CLI
+
+Use the canonical EW cache maintained by `lex-earliest-seqs`:
+
+```bash
+uv run ew-observe step 11
+uv run ew-observe candidate 11 14
+```
+
+For the known early step `a_11 = 18`, the threat ledger contains exactly `6`, `12`, and `14`, paid at indices `3`, `7`, and `6` respectively, followed by the winning row for `18`.
+
+A trace fails loudly if the supplied prefix is inconsistent with the greedy rule, either because the observed winner is inadmissible/already used or because an unused admissible value lies below it.
 
 ## Planned layers
 
