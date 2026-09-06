@@ -49,7 +49,8 @@ def test_queue_depth_flag_controls_human_collapse(monkeypatch, capsys):
 
     cli_module.step(11, queue_depth=False, max_width=0)
     expanded = capsys.readouterr().out
-    assert "expanded threat view" in expanded
+    assert "expanded reduced-threat view" in expanded
+    assert "Q_11=13" in expanded
     assert "T      6" in expanded
     assert "T     12" in expanded
     assert "T     14" in expanded
@@ -80,6 +81,7 @@ def test_human_sort_and_collapse_flags_do_not_reorder_machine_json(monkeypatch, 
 
     assert payload["view"] == "queue-frontiers"
     assert payload["ordering"] == "display-value-asc,winner-last"
+    assert payload["candidate_universe"]["kind"] == "fresh-prime-reduced"
     assert [(row["display_value"], row["queue_depth"]) for row in payload["queues"]] == [
         (20, 2),
         (22, 1),
