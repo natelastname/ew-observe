@@ -1,11 +1,15 @@
-"""Queue-depth-oriented human presentation for EW decision traces."""
+"""Queue-depth-oriented presentation for EW decision traces."""
 
 from __future__ import annotations
 
+import csv
+import io
+import json
 from collections.abc import Sequence
 
 from .decision import CandidateAudit, DecisionTrace
 from .incidence import IncidenceRow, IncidenceTable, render_text as render_incidence_text
+from .presentation import OutputFormat
 from .queue_depth import exact_support_queue_depth
 
 
@@ -31,6 +35,16 @@ def _prime_exponents(value: int) -> tuple[tuple[int, int], ...]:
     return tuple(factors)
 
 
+def _factorization(value: int) -> str:
+    factors = _prime_exponents(value)
+    if not factors:
+        return "1"
+    return "·".join(
+        str(prime) if exponent == 1 else f"{prime}^{exponent}"
+        for prime, exponent in factors
+    )
+
+
 def _incidence_coordinates(
     value: int,
     *,
@@ -48,6 +62,10 @@ def _incidence_coordinates(
 
 def _human_primes(primes: frozenset[int]) -> str:
     return ",".join(str(prime) for prime in sorted(primes)) or "—"
+
+
+def _primes(primes: frozenset[int]) -> str:
+    return ",".join(str(prime) for prime in sorted(primes))
 
 
 def queue_depth_candidate_order(trace: DecisionTrace) -> tuple[CandidateAudit, ...]:
@@ -151,15 +169,79 @@ def _tables(
     return tuple(tables)
 
 
-def render_queue_depth_decision_trace(
+def _audit_payload(audit: CandidateAudit) -> dict[str, object]:
+    return {
+        "value": audit.value,
+        "queue_depth": exact_support_queue_depth(audit.value),
+        "factorization": _factorization(audit.value),
+        "support": sorted(audit.support),
+        "used_at": audit.used_at,
+        "retained_primes": sorted(audit.retained_primes),
+        "introduced_primes": sorted(audit.introduced_primes),
+        "rejection_reasons": [reason.value for reason in audit.rejection_reasons],
+    }
+
+
+def _payload(trace: DecisionTrace) -> dict[str, object]:
+    ordered = queue_depth_candidate_order(trace)
+    threats = ordered[:-1]
+    return {
+        "type": "ew-decision-trace",
+        "view": "queue-depth",
+        "ordering": "queue-depth-desc,value-asc,winner-last",
+        "n": trace.n,
+        "state": {
+            "two_back": {"n": trace.n - 2, "value": trace.two_back},
+            "previous": {"n": trace.n - 1, "value": trace.previous},
+        },
+        "legal_carriers": sorted(trace.legal_carriers),
+        "least_unused": trace.least_unused,
+        "threats": [_audit_payload(audit) for audit in threats],
+        "winner": _audit_payload(trace.winner_audit),
+    }
+
+
+def _flat_rows(trace: DecisionTrace) -> list[dict[str, object]]:
+    rows: list[dict[str, object]] = []
+    for audit in queue_depth_candidate_order(trace):
+        is_winner = audit == trace.winner_audit
+        rows.append(
+            {
+                "n": trace.n,
+                "kind": "winner" if is_winner else "threat",
+                "value": audit.value,
+                "queue_depth": exact_support_queue_depth(audit.value),
+                "support": _primes(audit.support),
+                "shared_with_previous": _primes(audit.retained_primes),
+                "new_primes": _primes(audit.introduced_primes),
+                "used_at": audit.used_at if audit.used_at is not None else "",
+            }
+        )
+    return rows
+
+
+def _render_delimited(rows: Sequence[dict[str, object]], delimiter: str) -> str:
+    if not rows:
+        return ""
+    output = io.StringIO()
+    writer = csv.DictWriter(
+        output,
+        fieldnames=list(rows[0]),
+        delimiter=delimiter,
+        lineterminator="\n",
+    )
+    writer.writeheader()
+    writer.writerows(rows)
+    return output.getvalue()
+
+
+def _render_text(
     trace: DecisionTrace,
     *,
-    diagnostics: bool = False,
-    max_width: int = 160,
-    candidates_per_table: int = 0,
+    diagnostics: bool,
+    max_width: int,
+    candidates_per_table: int,
 ) -> str:
-    """Render threats by descending exact-support queue depth."""
-
     tables = _tables(
         trace,
         max_width=max_width,
@@ -217,3 +299,48 @@ def render_queue_depth_decision_trace(
             lines.append(f"  {reason.value:<22}: {count}")
 
     return "\n".join(lines) + "\n"
+
+
+def _render_markdown(trace: DecisionTrace) -> str:
+    lines = [
+        f"## EW step {trace.n}: queue-depth view",
+        "",
+        "| kind | candidate | queue depth | support | used at |",
+        "| --- | ---: | ---: | --- | ---: |",
+    ]
+    for audit in queue_depth_candidate_order(trace):
+        is_winner = audit == trace.winner_audit
+        lines.append(
+            f"| {'winner' if is_winner else 'threat'} | {audit.value} | "
+            f"{exact_support_queue_depth(audit.value)} | `{_primes(audit.support)}` | "
+            f"{'—' if audit.used_at is None else f'a_{audit.used_at}'} |"
+        )
+    return "\n".join(lines) + "\n"
+
+
+def render_queue_depth_decision_trace(
+    trace: DecisionTrace,
+    *,
+    output_format: OutputFormat | str = OutputFormat.TEXT,
+    diagnostics: bool = False,
+    max_width: int = 160,
+    candidates_per_table: int = 0,
+) -> str:
+    """Render threats by descending exact-support queue depth."""
+
+    format_ = OutputFormat(output_format)
+    if format_ is OutputFormat.TEXT:
+        return _render_text(
+            trace,
+            diagnostics=diagnostics,
+            max_width=max_width,
+            candidates_per_table=candidates_per_table,
+        )
+    if format_ is OutputFormat.MARKDOWN:
+        return _render_markdown(trace)
+    if format_ is OutputFormat.JSON:
+        return json.dumps(_payload(trace), indent=2, sort_keys=False) + "\n"
+    rows = _flat_rows(trace)
+    if format_ is OutputFormat.TSV:
+        return _render_delimited(rows, "\t")
+    return _render_delimited(rows, ",")
