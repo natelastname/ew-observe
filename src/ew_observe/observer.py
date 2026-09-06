@@ -1,9 +1,10 @@
-"""Public observer class combining step- and candidate-centric microscopes."""
+"""Public observer class combining the EW microscopes."""
 
 from __future__ import annotations
 
 from .decision import EWObserver as _DecisionEWObserver
 from .lifecycle import CandidateLifecycleTrace, trace_candidate_lifecycle
+from .queue_heads import QueueHeadTrace, trace_queue_heads
 
 
 class EWObserver(_DecisionEWObserver):
@@ -19,3 +20,8 @@ class EWObserver(_DecisionEWObserver):
         """Track one fixed candidate through consecutive EW selection states."""
 
         return trace_candidate_lifecycle(self, value, start=start, stop=stop)
+
+    def trace_queue_heads(self, n: int) -> QueueHeadTrace:
+        """Compress one step's exhaustive threats to current exact-support heads."""
+
+        return trace_queue_heads(self, n)
