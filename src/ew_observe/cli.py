@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from cyclopts import App
 
-from .decision import EWObserver, render_candidate_audit, render_decision_trace
+from .decision import EWObserver, render_candidate_audit
+from .presentation import render_decision_trace
 
 app = App()
 
@@ -19,11 +20,11 @@ def _load_ew_terms(count: int) -> tuple[int, ...]:
 
 
 @app.command
-def step(n: int) -> None:
+def step(n: int, *, diagnostics: bool = False) -> None:
     """Explain the exact greedy choice of ``a_n`` using the threat ledger."""
 
     observer = EWObserver(_load_ew_terms(n))
-    print(render_decision_trace(observer.trace_step(n)))
+    print(render_decision_trace(observer.trace_step(n), diagnostics=diagnostics))
 
 
 @app.command
