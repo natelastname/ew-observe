@@ -326,9 +326,6 @@ def colorize_viewer_line(line: str) -> Text:
         role = role_match.group(2)
         text.stylize(_ROLE_STYLES[role], role_start, role_start + 1)
 
-        # Work from right to left so replacing sign characters cannot invalidate
-        # the offsets of earlier matches. Replacement is always one character,
-        # preserving exact visible width.
         matches = list(_SIGNED_EXPONENT.finditer(line))
         for match in reversed(matches):
             sign_start = match.start(1)
@@ -351,20 +348,40 @@ def colorize_viewer_line(line: str) -> Text:
     return text
 
 
+def styled_viewport_lines(
+    document: str,
+    state: ViewerState,
+    *,
+    width: int,
+    height: int,
+) -> tuple[Text, ...]:
+    """Color full logical lines first, then crop them to the current viewport."""
+
+    width = max(1, width)
+    height = max(1, height)
+    # Reuse the plain helper solely to clamp x/y consistently.
+    viewport_lines(document, state, width=width, height=height)
+    lines = document.splitlines() or [""]
+    visible = lines[state.y : state.y + height]
+    cropped = tuple(colorize_viewer_line(line)[state.x : state.x + width] for line in visible)
+    if len(cropped) < height:
+        cropped += (Text(""),) * (height - len(cropped))
+    return cropped
+
+
 def _frame(session: ViewerSession, *, width: int, height: int) -> Group:
     """Build the Rich renderable for one terminal frame."""
 
     width = max(1, width)
     height = max(3, height)
     body_height = max(1, height - 2)
-    body = viewport_lines(
+    body_renderables = styled_viewport_lines(
         session.document(render_width=width),
         session.state,
         width=width,
         height=body_height,
     )
     status = Text(session.status_line()[:width], style="bold reverse", no_wrap=True)
-    body_renderables = [colorize_viewer_line(line) for line in body]
     keys = Text(
         "q quit | hjkl scroll | n/p step | c collapse | f frontier/head | "
         "v/x/d/r sort | i details | ? help"[:width],
