@@ -10,6 +10,7 @@ from .lifecycle_presentation import render_candidate_lifecycle
 from .observer import EWObserver
 from .presentation import OutputFormat, render_candidate_audit, render_decision_trace
 from .queue_frontier_presentation import HUMAN_SORT_ORDERS, render_queue_frontier_trace
+from .queue_head_human_presentation import render_queue_head_human_trace
 from .queue_head_presentation import render_queue_head_trace
 
 app = App()
@@ -120,13 +121,13 @@ def step(
                 sort_order=sort,
             )
         elif queue_heads:
-            rendered = render_queue_head_trace(
+            rendered = render_queue_head_human_trace(
                 observer.trace_queue_heads(n),
                 output_format=format_,
                 diagnostics=diagnostics,
                 max_width=max_width,
                 candidates_per_table=candidates_per_table,
-                queue_depth_order=False,
+                sort_order=sort,
             )
         else:
             rendered = render_queue_frontier_trace(
