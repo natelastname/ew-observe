@@ -6,6 +6,7 @@ from ew_observe.viewer import (
     ViewerSession,
     ViewerState,
     colorize_viewer_line,
+    styled_viewport_lines,
     viewport_lines,
 )
 
@@ -71,6 +72,18 @@ def test_viewer_leaves_bare_shared_exponents_uncolored():
 
     exponent = colored.plain.rindex("1")
     assert str(colored.get_style_at_offset(console, exponent)) == "none"
+
+
+def test_colored_exponent_survives_horizontal_crop_past_hidden_sign():
+    console = Console(force_terminal=True, color_system="standard")
+    line = "   W     18     2 1 +2"
+    plus_digit = line.index("+2") + 1
+    state = ViewerState(n=11, x=plus_digit, y=0)
+
+    cropped = styled_viewport_lines(line, state, width=1, height=1)[0]
+
+    assert cropped.plain == "2"
+    assert str(cropped.get_style_at_offset(console, 0)) == "bold green"
 
 
 def test_viewer_keys_switch_sort_collapse_representation_and_details():
