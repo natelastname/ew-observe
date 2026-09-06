@@ -73,19 +73,19 @@ def step(
     grouping; use ``0`` for one unlimited table. ``--candidates-per-table``
     optionally sets an explicit candidate-row cap.
 
-    ``--queue-depth`` is an optional text mode: replace occurrence indices with
-    zero-based exact-support queue depth and sort paid threats by descending
-    depth, breaking ties by ascending numerical value. The winner remains last.
+    ``--queue-depth`` replaces occurrence indices with zero-based exact-support
+    queue depth and sorts paid threats by descending depth, breaking ties by
+    ascending numerical value. The winner remains last. Structured formats
+    expose the same queue depths and ordering explicitly.
     """
 
     observer = EWObserver(_load_ew_terms(n))
     trace = observer.trace_step(n)
     format_ = OutputFormat(format)
     if queue_depth:
-        if format_ is not OutputFormat.TEXT:
-            raise ValueError("--queue-depth currently applies only to --format text")
         rendered = render_queue_depth_decision_trace(
             trace,
+            output_format=format_,
             diagnostics=diagnostics,
             max_width=max_width,
             candidates_per_table=candidates_per_table,
