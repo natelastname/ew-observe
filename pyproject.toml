@@ -5,7 +5,7 @@ build-backend = "uv_build"
 [project]
 name = "ew-observe"
 version = "0.1.0"
-description = "A python module"
+description = "Instrumented research tooling for the Enots--Wolley greedy sequence"
 readme = "README.md"
 requires-python = ">=3.12,<3.14.1"
 authors = [
