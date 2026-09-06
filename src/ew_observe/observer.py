@@ -22,6 +22,6 @@ class EWObserver(_DecisionEWObserver):
         return trace_candidate_lifecycle(self, value, start=start, stop=stop)
 
     def trace_queue_heads(self, n: int) -> QueueHeadTrace:
-        """Compress one step's exhaustive threats to current exact-support heads."""
+        """Compress one step to exact queues with last-used frontier and current head."""
 
         return trace_queue_heads(self, n)
