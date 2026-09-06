@@ -25,7 +25,7 @@ from .queue_depth import (
 )
 from .queue_depth_presentation import render_queue_depth_decision_trace
 from .queue_frontier_presentation import render_queue_frontier_trace
-from .queue_head_presentation import render_queue_head_trace
+from .queue_head_machine_presentation import render_queue_head_trace
 from .queue_heads import (
     ExactQueueHead,
     QueueHeadTrace,
