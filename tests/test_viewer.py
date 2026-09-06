@@ -56,8 +56,8 @@ def test_viewer_colors_replace_signed_exponent_notation_without_shifting_columns
     assert "-" not in colored.plain
     assert colored.plain == "   W     18     2 1  2   3"
 
-    plus_digit = colored.plain.index("2", colored.plain.index("1") + 1)
-    minus_digit = colored.plain.rindex("3")
+    plus_digit = line.index("+2") + 1
+    minus_digit = line.index("-3") + 1
     winner = colored.plain.index("W")
     assert str(colored.get_style_at_offset(console, plus_digit)) == "bold green"
     assert str(colored.get_style_at_offset(console, minus_digit)) == "bold red"
