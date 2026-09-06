@@ -24,18 +24,18 @@ let
 R=P(A)\setminus P(B)
 \]
 
-be the primes of the predecessor that can legally carry the next term. The first implementation target is to reconstruct the exact race among the carrier streams indexed by `R` and produce a certificate explaining why `W` is the least unused admissible integer.
+be the primes of the predecessor that can legally carry the next term.
 
-The first-pass implementation deliberately uses the more primitive exhaustive oracle before introducing a carrier-stream decomposition. For every positive integer `x < W` it determines all applicable rejection reasons:
+The first-pass implementation deliberately uses an exhaustive reference oracle. For every positive integer `x < W` it determines all applicable rejection reasons:
 
 - `used-before`;
 - `no-predecessor-overlap`;
 - `two-back-conflict`;
 - `no-new-prime`.
 
-The locally admissible values below `W` form the **threat set**. Greedy minimality requires every threat to have been used earlier. The default human-facing output is therefore the compact **threat ledger**, which records each threat together with its support, retained and introduced primes, and the exact earlier index at which it was paid.
+The locally admissible values below `W` form the **threat set**. Greedy minimality requires every threat to have been used earlier. The default human-facing output is therefore a compact aligned **greedy race** showing each threat, its prime roles, and the exact earlier index at which history paid it.
 
-The full exhaustive scan remains available lazily through the Python API and serves as the reference oracle for any later optimized reconstruction.
+The full exhaustive scan remains available lazily through the Python API and serves as the reference oracle for later optimized reconstructions.
 
 ### Python API
 
@@ -61,6 +61,27 @@ Use the canonical EW cache maintained by `lex-earliest-seqs`:
 uv run ew-observe step 11
 uv run ew-observe candidate 11 14
 ```
+
+The default `text` format uses an aligned whitespace grid in the same spirit as the `lex-earliest-seqs` incidence tables. In the compact factor-role notation, a bare prime is shared with the predecessor and `+p` is introduced relative to the predecessor. Thus at `a_11 = 18`, for example, `2·+3^2` means that `2` is retained and `3` is new.
+
+All microscope commands support explicit output formats:
+
+```bash
+uv run ew-observe step 11 --format text
+uv run ew-observe step 11 --format markdown
+uv run ew-observe step 11 --format json
+uv run ew-observe step 11 --format tsv
+uv run ew-observe step 11 --format csv
+
+uv run ew-observe candidate 11 14 --format json
+```
+
+- `text` is optimized for terminal reading;
+- `markdown` is retained for research notes and generated artifacts;
+- `json` preserves the complete structured decision certificate, including prime sets and rejection reasons;
+- `tsv` and `csv` emit one flat row per threat/winner for analysis pipelines.
+
+`--diagnostics` adds overlapping exhaustive rejection counts to human-oriented `step` output. The structured JSON representation always includes those counts.
 
 For the known early step `a_11 = 18`, the threat ledger contains exactly `6`, `12`, and `14`, paid at indices `3`, `7`, and `6` respectively, followed by the winning row for `18`.
 
