@@ -7,7 +7,7 @@ import io
 import json
 from collections.abc import Iterable, Sequence
 
-from .decision import CandidateAudit, RejectionReason
+from .decision import CandidateAudit, RejectionReason, ReductionReason
 from .lifecycle import (
     CandidateLifecycleStatus,
     CandidateLifecycleStep,
@@ -42,6 +42,12 @@ def _short_reason(reason: RejectionReason) -> str:
     }[reason]
 
 
+def _short_reduction(reason: ReductionReason) -> str:
+    return {
+        ReductionReason.PRIME_BEYOND_LEAST_UNINTRODUCED: ">Q",
+    }[reason]
+
+
 def _status_text(step: CandidateLifecycleStep) -> str:
     if step.status is CandidateLifecycleStatus.SELECTED:
         return "SELECTED"
@@ -50,10 +56,14 @@ def _status_text(step: CandidateLifecycleStep) -> str:
     if step.status is CandidateLifecycleStatus.USED:
         used_at = step.candidate_audit.used_at
         return f"USED@a_{used_at}" if used_at is not None else "USED"
-    reasons = _blockers(step.candidate_audit)
-    if not reasons:
-        return "BLOCKED"
-    return "BLOCKED:" + ",".join(_short_reason(reason) for reason in reasons)
+
+    primitive = _blockers(step.candidate_audit)
+    reductions = step.candidate_audit.reduction_reasons
+    labels = [
+        *(_short_reason(reason) for reason in primitive),
+        *(_short_reduction(reason) for reason in reductions),
+    ]
+    return "BLOCKED" if not labels else "BLOCKED:" + ",".join(labels)
 
 
 def _compact_values(values: Sequence[int], *, limit: int = 7) -> str:
@@ -103,9 +113,16 @@ def _audit_payload(audit: CandidateAudit) -> dict[str, object]:
         "two_back_overlap": sorted(audit.two_back_overlap),
         "retained_primes": sorted(audit.retained_primes),
         "introduced_primes": sorted(audit.introduced_primes),
-        "rejection_reasons": [reason.value for reason in audit.rejection_reasons],
-        "structurally_admissible": audit.structurally_admissible,
-        "globally_admissible": audit.globally_admissible,
+        "least_unintroduced_prime": audit.least_unintroduced_prime,
+        "primes_beyond_fresh_frontier": sorted(audit.primes_beyond_fresh_frontier),
+        "primitive_rejection_reasons": [
+            reason.value for reason in audit.rejection_reasons
+        ],
+        "reduction_reasons": [reason.value for reason in audit.reduction_reasons],
+        "primitive_structurally_admissible": audit.structurally_admissible,
+        "primitive_globally_admissible": audit.globally_admissible,
+        "in_reduced_candidate_universe": audit.in_reduced_candidate_universe,
+        "reduced_globally_admissible": audit.reduced_globally_admissible,
     }
 
 
@@ -117,6 +134,7 @@ def _step_payload(step: CandidateLifecycleStep) -> dict[str, object]:
             "previous": step.previous,
             "winner": step.winner,
         },
+        "least_unintroduced_prime": step.candidate_audit.least_unintroduced_prime,
         "legal_carriers": sorted(step.legal_carriers),
         "candidate": _audit_payload(step.candidate_audit),
         "status": step.status.value,
@@ -135,6 +153,7 @@ def _step_payload(step: CandidateLifecycleStep) -> dict[str, object]:
 def _trace_payload(trace: CandidateLifecycleTrace) -> dict[str, object]:
     return {
         "type": "ew-candidate-lifecycle",
+        "candidate_universe": "fresh-prime-reduced",
         "value": trace.value,
         "start": trace.start,
         "stop": trace.stop,
@@ -158,6 +177,7 @@ def _render_text(trace: CandidateLifecycleTrace) -> str:
                 str(step.two_back),
                 str(step.previous),
                 str(step.winner),
+                str(step.candidate_audit.least_unintroduced_prime),
                 _primes(step.legal_carriers),
                 _status_text(step),
                 str(step.live_rank) if step.live_rank is not None else "—",
@@ -168,15 +188,27 @@ def _render_text(trace: CandidateLifecycleTrace) -> str:
 
     lines = [
         f"EW candidate lifecycle: {trace.value}",
-        f"steps a_{trace.start} through a_{trace.stop}",
+        f"steps a_{trace.start} through a_{trace.stop}; live/rank uses fresh-prime-reduced universe",
         "",
         _render_grid(
-            ("n", "B", "A", "W", "carriers", "candidate status", "rank", "beaters", "A→W"),
+            (
+                "n",
+                "B",
+                "A",
+                "W",
+                "Q",
+                "carriers",
+                "candidate status",
+                "rank",
+                "beaters",
+                "A→W",
+            ),
             rows,
         ),
         "",
         "A→W notation: = retained, + introduced, - dropped; +primes are the next legal carrier face.",
-        "rank is among currently unused locally admissible candidates; beaters are exact in JSON/CSV/TSV.",
+        "Q is the least globally unintroduced prime; BLOCKED:>Q means the candidate crosses that frontier.",
+        "rank is among currently unused reduced-admissible candidates; beaters are exact in JSON/CSV/TSV.",
         "",
         f"first live step : {trace.first_live_at if trace.first_live_at is not None else '—'}",
         f"live-loss steps : {_compact_values(trace.live_loss_steps)}",
@@ -191,10 +223,10 @@ def _render_markdown(trace: CandidateLifecycleTrace) -> str:
     lines = [
         f"## EW candidate lifecycle: `{trace.value}`",
         "",
-        f"Steps `a_{trace.start}` through `a_{trace.stop}`.",
+        f"Steps `a_{trace.start}` through `a_{trace.stop}` in the fresh-prime-reduced candidate universe.",
         "",
-        "| n | B | A | W | legal carriers | candidate status | rank | beaters | A→W |",
-        "| ---: | ---: | ---: | ---: | --- | --- | ---: | --- | --- |",
+        "| n | B | A | W | Q | legal carriers | candidate status | rank | beaters | A→W |",
+        "| ---: | ---: | ---: | ---: | ---: | --- | --- | ---: | --- | --- |",
     ]
     for step in trace.steps:
         lines.append(
@@ -205,6 +237,7 @@ def _render_markdown(trace: CandidateLifecycleTrace) -> str:
                     str(step.two_back),
                     str(step.previous),
                     str(step.winner),
+                    str(step.candidate_audit.least_unintroduced_prime),
                     _primes(step.legal_carriers),
                     _status_text(step),
                     str(step.live_rank) if step.live_rank is not None else "—",
@@ -230,6 +263,7 @@ def _render_markdown(trace: CandidateLifecycleTrace) -> str:
 def _flat_rows(trace: CandidateLifecycleTrace) -> list[dict[str, object]]:
     rows: list[dict[str, object]] = []
     for step in trace.steps:
+        audit = step.candidate_audit
         rows.append(
             {
                 "value": trace.value,
@@ -237,20 +271,37 @@ def _flat_rows(trace: CandidateLifecycleTrace) -> list[dict[str, object]]:
                 "two_back": step.two_back,
                 "previous": step.previous,
                 "winner": step.winner,
+                "least_unintroduced_prime": audit.least_unintroduced_prime,
                 "legal_carriers": _machine_primes(step.legal_carriers),
                 "status": step.status.value,
-                "used_at": step.candidate_audit.used_at or "",
-                "structurally_admissible": step.candidate_audit.structurally_admissible,
-                "globally_admissible": step.candidate_audit.globally_admissible,
-                "rejection_reasons": ";".join(
-                    reason.value for reason in step.candidate_audit.rejection_reasons
+                "used_at": audit.used_at or "",
+                "primitive_structurally_admissible": audit.structurally_admissible,
+                "primitive_globally_admissible": audit.globally_admissible,
+                "in_reduced_candidate_universe": audit.in_reduced_candidate_universe,
+                "reduced_globally_admissible": audit.reduced_globally_admissible,
+                "primes_beyond_fresh_frontier": _machine_primes(
+                    audit.primes_beyond_fresh_frontier
+                ),
+                "primitive_rejection_reasons": ";".join(
+                    reason.value for reason in audit.rejection_reasons
+                ),
+                "reduction_reasons": ";".join(
+                    reason.value for reason in audit.reduction_reasons
                 ),
                 "live_rank": step.live_rank or "",
-                "beating_candidates": ";".join(str(value) for value in step.beating_candidates),
+                "beating_candidates": ";".join(
+                    str(value) for value in step.beating_candidates
+                ),
                 "winning_blocker": step.winning_blocker or "",
-                "winner_retained_primes": _machine_primes(step.winner_retained_primes),
-                "winner_introduced_primes": _machine_primes(step.winner_introduced_primes),
-                "winner_dropped_primes": _machine_primes(step.winner_dropped_primes),
+                "winner_retained_primes": _machine_primes(
+                    step.winner_retained_primes
+                ),
+                "winner_introduced_primes": _machine_primes(
+                    step.winner_introduced_primes
+                ),
+                "winner_dropped_primes": _machine_primes(
+                    step.winner_dropped_primes
+                ),
                 "next_face": _machine_primes(step.next_face),
             }
         )
