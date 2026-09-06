@@ -49,7 +49,7 @@ be the increasing exact-support queue. Before a given EW step, suppose exactly t
 - `q_{d-1}(S)` is the maximal previously used value when `d>0`;
 - `q_d(S)` is the current first-unused head.
 
-The default `step` view uses **one row per represented exact-support queue**. A losing queue displays its maximal previously used value `q_{d-1}`. The winning queue displays the actual winner `q_d = W`. Thus the table shows how far each competing queue has already been serviced rather than repeating every old member of that queue.
+The default human `step` view uses **one row per represented exact-support queue**. A losing queue displays its maximal previously used value `q_{d-1}`. The winning queue displays the actual winner `q_d = W`. Thus the table shows how far each competing queue has already been serviced rather than repeating every old member of that queue.
 
 The represented finite queue set is the collection of supports witnessed by the exhaustive threats below `W`, together with the winner support. The tool deliberately does not pretend to enumerate the infinitely many untouched supports whose first possible values already lie above `W`.
 
@@ -72,7 +72,7 @@ for audit in observer.iter_candidate_audits(11):
 
 Each queue in `queues.heads` records both its current first-unused `value` and its `last_used_value`, as well as its service `depth` and the exhaustive threat rows compressed into that queue.
 
-### CLI
+### CLI: human views
 
 Use the canonical EW cache maintained by `lex-earliest-seqs`:
 
@@ -81,43 +81,62 @@ uv run ew-observe step 11
 uv run ew-observe candidate 11 14
 ```
 
-The default `text` format is a sparse prime-coordinate incidence view in the style of the `lex-earliest-seqs` tables. It uses row roles:
+The default `text` format is a sparse prime-coordinate incidence view in the style of the `lex-earliest-seqs` tables. Every self-contained mini-table repeats the complete incoming decision context **at the top**:
 
 - `B`: two-back term;
 - `A`: previous term;
-- `L`: maximal previously used value from a losing exact-support queue;
-- `W`: actual winner from the winning queue.
+- `W`: actual winner.
+
+The sortable body then contains either queue representatives or exhaustive historical threats. In the default collapsed view, `L` is the maximal previously used value from a losing exact-support queue.
 
 The `depth` column is the number of values already serviced in that exact queue before the step. On `L` and `W` rows, a bare exponent is a prime shared with the predecessor and `+e` marks a newly introduced prime with exponent `e`.
 
-By default losing queue rows are sorted by their displayed value. To sort them by descending queue depth and then ascending displayed value, use:
+Human presentation has two independent axes: **collapse** and **sort**.
+
+Queue collapse is enabled by default and controlled by the boolean `--queue-depth` option. Cyclopts also exposes the negative form:
 
 ```bash
+# default: one representative row per exact queue
 uv run ew-observe step 1000 --queue-depth
+
+# expanded historical threat rows
+uv run ew-observe step 1000 --no-queue-depth
 ```
 
-The winner always stays last.
+`--exhaustive-threats` is retained as an explicit alias for the expanded human ledger.
 
-The previous current-head representation remains available explicitly:
+Sorting is independent of collapse:
+
+```bash
+uv run ew-observe step 1000 --sort value
+uv run ew-observe step 1000 --sort prime-lex
+uv run ew-observe step 1000 --sort depth
+uv run ew-observe step 1000 --sort retained
+```
+
+The current experimental human sort orders are:
+
+- `value`: displayed numerical value ascending;
+- `prime-lex`: lexicographic order of the prime-factor word, e.g. a number with factorization `2^2*7` has word `(2,2,7)`;
+- `depth`: queue depth descending, numerical value ascending to break ties;
+- `retained`: lowest retained/continuity prime ascending, then numerical value.
+
+The winner is never part of the sortable body because it is fixed in the context rows of every table.
+
+The alternate current-head representation remains available explicitly:
 
 ```bash
 uv run ew-observe step 1000 --queue-heads
 ```
 
-and the original uncompressed historical threat ledger remains available with:
-
-```bash
-uv run ew-observe step 1000 --exhaustive-threats
-```
-
-The default text output groups queue rows into smaller self-contained incidence tables. Every table repeats `B` and `A`, and its prime columns are exactly the primes present in those two terms and the queue rows shown there. `--max-width` is a soft width target; `--candidates-per-table` adds an explicit row cap. Use `--max-width 0` for one unlimited table.
+The default text output groups body rows into smaller self-contained incidence tables. `--max-width` is a soft width target; `--candidates-per-table` adds an explicit row cap. Use `--max-width 0` for one unlimited table. In every case, **each table repeats B, A, and W** before its body rows.
 
 For the early step `a_11 = 18`, the exhaustive threats are `6`, `12`, and `14`. The default queue view collapses them to two queues:
 
 - support `{2,7}` has depth 1, last-used value `14`, and current head `28`; it loses;
 - support `{2,3}` has depth 2, last-used value `12`, and current head `18`; `18` wins.
 
-Thus the default rows are `L 14` and `W 18`, not `6,12,14` and not `H 28`.
+Thus the default body has `L 14`, while `W 18` appears in the fixed context at the top of the table.
 
 ## Candidate lifecycle microscope
 
@@ -150,7 +169,7 @@ uv run ew-observe track 734 --start 745 --until-prime-debut 367
 
 If `--start` is omitted, `track` shows the final 16 states by default; change that with `--context`. `--search-limit` bounds automatic prime-debut lookup.
 
-## Output formats
+## Output formats and machine-data guarantee
 
 Microscope commands support explicit output formats:
 
@@ -165,21 +184,22 @@ uv run ew-observe candidate 11 14 --format json
 uv run ew-observe track 18 --start 6 --stop 12 --format json
 ```
 
-- `text` is optimized for terminal reading;
-- `markdown` is retained for research notes and generated artifacts;
+- `text` and `markdown` are human presentation formats;
 - `json` preserves complete structured mathematical data;
 - `tsv` and `csv` emit flat analysis-friendly rows.
 
-The default queue-frontier JSON includes, for each queue, `display_value`, `queue_depth`, `last_used_value`, `current_head`, support, and the historical `source_threats` compressed into the row. Thus the human compression does not discard the current-head race or its provenance.
+Human-only choices such as `--sort`, `--queue-depth/--no-queue-depth`, width splitting, and repeated context rows **do not reorder, discard, or weaken machine-readable output**. Default JSON/TSV/CSV use a stable canonical queue-frontier order regardless of those human flags.
 
-`--diagnostics` adds the hidden current heads to the human queue-frontier view. `--exhaustive-threats --format json` exposes the original full decision certificate.
+The default queue-frontier JSON includes, for each queue, `display_value`, `queue_depth`, `last_used_value`, `current_head`, support, and the historical `source_threats` compressed into the row. It also retains the full exhaustive threat list. Thus human compression does not discard the current-head race or its provenance.
+
+`--diagnostics` adds hidden current heads to the human queue-frontier view. `--exhaustive-threats --format json` continues to expose the original full decision certificate explicitly.
 
 A decision trace fails loudly if the supplied prefix is inconsistent with the greedy rule, either because the observed winner is inadmissible/already used or because an unused admissible value lies below it.
 
 ## Planned layers
 
 1. **Decision engine** — exact reconstruction of individual EW greedy choices.
-2. **Queue race microscope** — one-row-per-exact-queue serviced frontiers, current heads, and depth ordering.
+2. **Queue race microscope** — one-row-per-exact-queue serviced frontiers, current heads, and interchangeable human sorting views.
 3. **Candidate lifecycles** — follow one fixed integer through live, blocked, losing, selected, and carrier-face-rotation states.
 4. **Occurrence detectors** — thin definitions of phenomena such as parity defects, canonical `2Q` debuts, `(c-2)q -> cq` spoke maturation, and `Q`-star packets.
 5. **Dossiers** — prime-incidence chronology, historical ancestry, queue/spoke state, and exact local counterfactuals for one occurrence.
