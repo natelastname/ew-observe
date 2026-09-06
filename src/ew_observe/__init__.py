@@ -25,6 +25,7 @@ from .queue_depth import (
     iter_exact_support_queue,
 )
 from .queue_depth_presentation import render_queue_depth_decision_trace
+from .queue_frontier_presentation import render_queue_frontier_trace
 from .queue_head_presentation import render_queue_head_trace
 from .queue_heads import (
     ExactQueueHead,
@@ -53,6 +54,7 @@ __all__ = [
     "render_candidate_lifecycle",
     "render_decision_trace",
     "render_queue_depth_decision_trace",
+    "render_queue_frontier_trace",
     "render_queue_head_trace",
     "trace_candidate_lifecycle",
     "trace_queue_heads",
