@@ -8,6 +8,7 @@ from .decision import prime_support
 from .lifecycle_presentation import render_candidate_lifecycle
 from .observer import EWObserver
 from .presentation import OutputFormat, render_candidate_audit, render_decision_trace
+from .queue_frontier_presentation import render_queue_frontier_trace
 from .queue_head_presentation import render_queue_head_trace
 
 app = App()
@@ -64,18 +65,23 @@ def step(
     max_width: int = 160,
     candidates_per_table: int = 0,
     queue_depth: bool = False,
+    queue_heads: bool = False,
     exhaustive_threats: bool = False,
 ) -> None:
     """Explain the exact greedy choice of ``a_n``.
 
-    The default view deduplicates the exhaustive historical threat ledger by
-    exact prime support and shows only each represented queue's current first
-    unused head. The table includes the actual zero-based queue depth. By
-    default nonwinning heads are ordered by numerical head value; pass
-    ``--queue-depth`` to sort them by descending depth, then ascending value.
-    The winner always remains last.
+    The default view has one row per represented exact-support queue. Losing
+    queues display their maximal previously used member; the winning queue
+    displays the actual winner. ``depth`` is the number of prior services of
+    that queue before the step. By default losing queues are ordered by their
+    displayed value; ``--queue-depth`` orders them by descending depth, then
+    ascending displayed value. The winner always remains last.
 
-    ``--exhaustive-threats`` restores the uncompressed historical threat ledger.
+    ``--queue-heads`` instead displays each represented queue's current first
+    unused head. ``--exhaustive-threats`` restores the original uncompressed
+    historical threat ledger. These two alternative views are mutually
+    exclusive.
+
     ``--max-width`` is a soft width bound for grouping rows into self-contained
     incidence tables that each repeat the incoming B,A state; use ``0`` for one
     unlimited table. ``--candidates-per-table`` adds an explicit row cap.
@@ -83,11 +89,14 @@ def step(
     Formats: text (default), markdown, json, tsv, csv.
     """
 
+    if queue_heads and exhaustive_threats:
+        raise ValueError("use either --queue-heads or --exhaustive-threats, not both")
+    if exhaustive_threats and queue_depth:
+        raise ValueError("--queue-depth applies to the one-row-per-queue views")
+
     observer = EWObserver(_load_ew_terms(n))
     format_ = OutputFormat(format)
     if exhaustive_threats:
-        if queue_depth:
-            raise ValueError("--queue-depth applies to the default queue-head view")
         rendered = render_decision_trace(
             observer.trace_step(n),
             output_format=format_,
@@ -96,14 +105,25 @@ def step(
             candidates_per_table=candidates_per_table,
         )
     else:
-        rendered = render_queue_head_trace(
-            observer.trace_queue_heads(n),
-            output_format=format_,
-            diagnostics=diagnostics,
-            max_width=max_width,
-            candidates_per_table=candidates_per_table,
-            queue_depth_order=queue_depth,
-        )
+        trace = observer.trace_queue_heads(n)
+        if queue_heads:
+            rendered = render_queue_head_trace(
+                trace,
+                output_format=format_,
+                diagnostics=diagnostics,
+                max_width=max_width,
+                candidates_per_table=candidates_per_table,
+                queue_depth_order=queue_depth,
+            )
+        else:
+            rendered = render_queue_frontier_trace(
+                trace,
+                output_format=format_,
+                diagnostics=diagnostics,
+                max_width=max_width,
+                candidates_per_table=candidates_per_table,
+                queue_depth_order=queue_depth,
+            )
     sys.stdout.write(rendered)
 
 
