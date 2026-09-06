@@ -74,7 +74,20 @@ def test_candidate_lifecycle_finds_live_loss_and_later_selection() -> None:
     assert trace.first_used_at == 11
 
 
-def test_lifecycle_text_emphasizes_face_transition() -> None:
+def test_lifecycle_blocks_primitive_live_candidate_beyond_fresh_prime_frontier() -> None:
+    trace = EWObserver(EW_PREFIX).trace_candidate_lifecycle(34, start=11, stop=11)
+    step = trace.steps[0]
+
+    assert step.candidate_audit.least_unintroduced_prime == 13
+    assert step.candidate_audit.globally_admissible
+    assert not step.candidate_audit.reduced_globally_admissible
+    assert step.candidate_audit.primes_beyond_fresh_frontier == frozenset({17})
+    assert step.status is CandidateLifecycleStatus.BLOCKED
+    assert step.live_rank is None
+    assert step.beating_candidates == ()
+
+
+def test_lifecycle_text_emphasizes_face_transition_and_fresh_frontier() -> None:
     trace = EWObserver(EW_PREFIX).trace_candidate_lifecycle(18, start=6, stop=12)
     rendered = render_candidate_lifecycle(trace)
 
@@ -84,13 +97,15 @@ def test_lifecycle_text_emphasizes_face_transition() -> None:
     assert "USED@a_11" in rendered
     assert "=2 +3 -7" in rendered
     assert "+primes are the next legal carrier face" in rendered
+    assert "least globally unintroduced prime" in rendered
 
 
-def test_lifecycle_json_preserves_exact_beaters_and_support_roles() -> None:
+def test_lifecycle_json_preserves_exact_beaters_support_roles_and_reduction() -> None:
     trace = EWObserver(EW_PREFIX).trace_candidate_lifecycle(18, start=6, stop=12)
     payload = json.loads(render_candidate_lifecycle(trace, output_format="json"))
 
     assert payload["type"] == "ew-candidate-lifecycle"
+    assert payload["candidate_universe"] == "fresh-prime-reduced"
     assert payload["value"] == 18
     assert payload["summary"]["live_steps"] == [7, 11]
     row = next(step for step in payload["steps"] if step["n"] == 7)
@@ -98,6 +113,7 @@ def test_lifecycle_json_preserves_exact_beaters_and_support_roles() -> None:
     assert row["live_rank"] == 2
     assert row["beating_candidates"] == [12]
     assert row["winning_blocker"] == 12
+    assert row["candidate"]["in_reduced_candidate_universe"]
     assert row["winner_transition"]["retained_primes"] == [2]
     assert row["winner_transition"]["introduced_primes"] == [3]
     assert row["winner_transition"]["dropped_primes"] == [7]
