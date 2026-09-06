@@ -60,13 +60,16 @@ def step(
     *,
     format: str = "text",
     diagnostics: bool = False,
-    max_width: int = 0,
+    max_width: int = 160,
+    candidates_per_table: int = 0,
 ) -> None:
     """Explain the exact greedy choice of ``a_n`` using the threat ledger.
 
-    Formats: text (default), markdown, json, tsv, csv. Text output uses a sparse
-    prime-incidence table. By default the table is never split; pass a positive
-    ``--max-width`` only when explicit column paneling is desired.
+    Formats: text (default), markdown, json, tsv, csv. Text output is split into
+    self-contained prime-incidence tables that each repeat the previous two EW
+    terms. ``--max-width`` is a soft width bound for automatic candidate
+    grouping; use ``0`` for one unlimited table. ``--candidates-per-table``
+    optionally sets an explicit candidate-row cap.
     """
 
     observer = EWObserver(_load_ew_terms(n))
@@ -75,6 +78,7 @@ def step(
         output_format=OutputFormat(format),
         diagnostics=diagnostics,
         max_width=max_width,
+        candidates_per_table=candidates_per_table,
     )
     sys.stdout.write(rendered)
 
