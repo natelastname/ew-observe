@@ -1,4 +1,4 @@
-"""Human-only expanded threat presentation with fixed B/A/W context."""
+"""Human-only expanded reduced-threat presentation with fixed B/A/W context."""
 
 from __future__ import annotations
 
@@ -156,7 +156,10 @@ def _render_text(
     )
     lines = [
         f"EW step {trace.n}: choose a_{trace.n} = {trace.winner}",
-        f"expanded threat view; human sort={sort_order}",
+        (
+            f"expanded reduced-threat view; Q_{trace.n}={trace.least_unintroduced_prime}; "
+            f"human sort={sort_order}"
+        ),
         "",
     ]
     start = 1
@@ -171,14 +174,24 @@ def _render_text(
         lines.append("Each table repeats B, A, and W; prime columns are local to the threats shown.")
     lines.extend(
         (
-            "role: B=two-back, A=previous, W=winner, T=already-used smaller admissible threat",
+            "role: B=two-back, A=previous, W=winner, T=already-used smaller reduced-admissible threat",
             f"T/W cells: bare exponent = shared with a_{trace.n - 1}; +exponent = newly introduced prime",
         )
     )
+    if trace.fresh_frontier_pruned_threats:
+        lines.append(
+            f"Fresh-prime frontier discarded {trace.fresh_frontier_pruned_threats} "
+            "primitive structural candidates below the winner."
+        )
     if diagnostics:
-        lines.extend(("", "Diagnostics (rejection counts overlap)"))
+        lines.extend(("", "Diagnostics"))
+        lines.append(f"  fresh-prime ceiling Q_{trace.n}: {trace.least_unintroduced_prime}")
+        lines.append(
+            f"  primitive structural candidates pruned: {trace.fresh_frontier_pruned_threats}"
+        )
+        lines.append("  primitive rejection counts below winner (overlapping):")
         for reason, count in trace.rejection_reason_counts:
-            lines.append(f"  {reason.value:<22}: {count}")
+            lines.append(f"    {reason.value:<22}: {count}")
     return "\n".join(lines) + "\n"
 
 
@@ -211,8 +224,9 @@ def _render_markdown(
         sort_order=sort_order,
     )
     lines = [
-        f"## EW step {trace.n}: expanded threat view",
+        f"## EW step {trace.n}: expanded reduced-threat view",
         "",
+        f"Fresh-prime ceiling: `Q_{trace.n} = {trace.least_unintroduced_prime}`.",
         f"Human sort: `{sort_order}`.",
         "",
     ]
@@ -233,7 +247,7 @@ def render_exhaustive_human_trace(
     candidates_per_table: int = 0,
     sort_order: str = "value",
 ) -> str:
-    """Render the expanded ledger. This module intentionally has no machine formats."""
+    """Render every threat in the safe fresh-prime-reduced candidate universe."""
 
     format_ = OutputFormat(output_format)
     if format_ is OutputFormat.TEXT:
