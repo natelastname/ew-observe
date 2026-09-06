@@ -117,7 +117,7 @@ uv run ew-observe step 1000 --sort retained
 The current experimental human sort orders are:
 
 - `value`: displayed numerical value ascending;
-- `prime-lex`: lexicographic order of the prime-factor word, e.g. a number with factorization `2^2*7` has word `(2,2,7)`;
+- `prime-lex`: reverse lexicographic order on the prime-exponent vector `(v_2,v_3,v_5,...)`, with `v_2` the least-significant digit. Equivalently, compare at the largest prime where the exponents differ; e.g. `12=2^2*3 -> ((3,1),(2,2))` and `18=2*3^2 -> ((3,2),(2,1))`, so `12 <prime-lex 18`;
 - `depth`: queue depth descending, numerical value ascending to break ties;
 - `retained`: lowest retained/continuity prime ascending, then numerical value.
 
