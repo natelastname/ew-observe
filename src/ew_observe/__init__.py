@@ -1,9 +1,11 @@
 """Instrumented research tooling for the Enots--Wolley greedy sequence."""
 
+from .candidate_presentation import render_candidate_audit
 from .decision import (
     CandidateAudit,
     DecisionTrace,
     GreedyTraceError,
+    ReductionReason,
     RejectionReason,
 )
 from .lifecycle import (
@@ -14,11 +16,7 @@ from .lifecycle import (
 )
 from .lifecycle_presentation import render_candidate_lifecycle
 from .observer import EWObserver
-from .presentation import (
-    OutputFormat,
-    render_candidate_audit,
-    render_decision_trace,
-)
+from .presentation import OutputFormat, render_decision_trace
 from .queue_depth import (
     exact_support_queue_depth,
     exact_support_queue_value,
@@ -45,6 +43,7 @@ __all__ = [
     "GreedyTraceError",
     "OutputFormat",
     "QueueHeadTrace",
+    "ReductionReason",
     "RejectionReason",
     "current_exact_support_head",
     "exact_support_queue_depth",
