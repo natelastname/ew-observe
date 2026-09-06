@@ -1,3 +1,5 @@
+import json
+
 import ew_observe.cli as cli_module
 from ew_observe import EWObserver
 from ew_observe.queue_depth import exact_support_queue_depth
@@ -52,6 +54,23 @@ def test_step_queue_depth_mode_is_optional(monkeypatch, capsys):
     output = capsys.readouterr().out
     assert "role object depth" in output
     assert "Deepest paid threat: 12 at queue depth 1." in output
+
+
+def test_step_queue_depth_json_is_sorted_and_machine_readable(monkeypatch, capsys):
+    monkeypatch.setattr(cli_module, "_load_ew_terms", lambda count: tuple(EW_PREFIX[:count]))
+
+    cli_module.step(11, queue_depth=True, format="json")
+
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["view"] == "queue-depth"
+    assert payload["ordering"] == "queue-depth-desc,value-asc,winner-last"
+    assert [(row["value"], row["queue_depth"]) for row in payload["threats"]] == [
+        (12, 1),
+        (6, 0),
+        (14, 0),
+    ]
+    assert payload["winner"]["value"] == 18
+    assert payload["winner"]["queue_depth"] == 2
 
 
 def test_step_default_remains_occurrence_order(monkeypatch, capsys):
