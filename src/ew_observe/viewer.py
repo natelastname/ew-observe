@@ -8,6 +8,7 @@ human-presentation state and delegates all mathematical reconstruction to
 from __future__ import annotations
 
 import os
+import re
 import select
 import shutil
 import sys
@@ -35,6 +36,17 @@ SORT_KEYS = {
     "r": "retained",
 }
 
+_TABLE_ROLE = re.compile(r"^(\s*)([BAWLTH])(\s+)")
+_SIGNED_EXPONENT = re.compile(r"(?<!\S)([+-])(\d+)(?=\s|$)")
+_ROLE_STYLES = {
+    "B": "dim cyan",
+    "A": "bold cyan",
+    "W": "bold yellow",
+    "L": "magenta",
+    "T": "magenta",
+    "H": "bright_magenta",
+}
+
 HELP_TEXT = """EW interactive viewer
 
 Navigation
@@ -53,10 +65,15 @@ Presentation
   c             collapse / expand exact queues
   f             frontier / current-head queue representation
   v             sort by numerical value
-  x             sort by prime-factor lexicographic order
+  x             prime-lex: highest differing prime exponent wins (2 is LSB)
   d             sort by queue depth
   r             sort by retained continuity prime
   i             toggle diagnostics/details
+
+Color
+  green exponent    introduced prime (replaces +e)
+  red exponent      dropped/negative prime marker (replaces -e)
+  plain exponent    retained/shared prime
 
 Other
   ?             toggle this help
@@ -292,6 +309,48 @@ def viewport_lines(
     return cropped
 
 
+def colorize_viewer_line(line: str) -> Text:
+    """Apply viewer-only semantic color while preserving exact display width.
+
+    In incidence rows, ``+e`` is rendered as a green ``e`` and ``-e`` as a red
+    ``e``. The sign itself becomes one blank character so column alignment is
+    unchanged. Bare exponents remain uncolored and therefore mean retained or
+    shared primes exactly as in the static text notation.
+    """
+
+    text = Text(line, no_wrap=True, overflow="crop")
+
+    role_match = _TABLE_ROLE.match(line)
+    if role_match is not None:
+        role_start = len(role_match.group(1))
+        role = role_match.group(2)
+        text.stylize(_ROLE_STYLES[role], role_start, role_start + 1)
+
+        # Work from right to left so replacing sign characters cannot invalidate
+        # the offsets of earlier matches. Replacement is always one character,
+        # preserving exact visible width.
+        matches = list(_SIGNED_EXPONENT.finditer(line))
+        for match in reversed(matches):
+            sign_start = match.start(1)
+            exponent_start = match.start(2)
+            exponent_end = match.end(2)
+            text.plain = text.plain[:sign_start] + " " + text.plain[sign_start + 1 :]
+            style = "bold green" if match.group(1) == "+" else "bold red"
+            text.stylize(style, exponent_start, exponent_end)
+        return text
+
+    stripped = line.strip()
+    if stripped.startswith("role "):
+        text.stylize("bold", 0, len(line))
+    elif stripped and set(stripped) <= {"-", " "}:
+        text.stylize("dim", 0, len(line))
+    elif line.startswith("EW step "):
+        text.stylize("bold", 0, len(line))
+    elif "mode:" in line or "human sort=" in line:
+        text.stylize("dim", 0, len(line))
+    return text
+
+
 def _frame(session: ViewerSession, *, width: int, height: int) -> Group:
     """Build the Rich renderable for one terminal frame."""
 
@@ -305,7 +364,7 @@ def _frame(session: ViewerSession, *, width: int, height: int) -> Group:
         height=body_height,
     )
     status = Text(session.status_line()[:width], style="bold reverse", no_wrap=True)
-    body_renderables = [Text(line, no_wrap=True, overflow="crop") for line in body]
+    body_renderables = [colorize_viewer_line(line) for line in body]
     keys = Text(
         "q quit | hjkl scroll | n/p step | c collapse | f frontier/head | "
         "v/x/d/r sort | i details | ? help"[:width],
