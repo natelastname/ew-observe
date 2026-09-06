@@ -223,8 +223,32 @@ def _incidence_coordinates(
     return tuple(cells)
 
 
-def _decision_incidence_table(trace: DecisionTrace) -> IncidenceTable:
-    """Build the sparse local prime-coordinate table for one greedy decision."""
+def _decision_candidate_row(trace: DecisionTrace, audit: CandidateAudit) -> IncidenceRow:
+    is_winner = audit == trace.winner_audit
+    return IncidenceRow(
+        leading=(
+            "W" if is_winner else "T",
+            str(audit.value),
+            f"a_{trace.n}" if is_winner else (
+                f"a_{audit.used_at}" if audit.used_at is not None else "UNPAID"
+            ),
+        ),
+        coordinates=_incidence_coordinates(
+            audit.value,
+            introduced=audit.introduced_primes,
+            mark_roles=True,
+        ),
+    )
+
+
+def _decision_incidence_table(
+    trace: DecisionTrace,
+    candidates: Sequence[CandidateAudit] | None = None,
+) -> IncidenceTable:
+    """Build one sparse local prime-coordinate table for a greedy-decision slice."""
+
+    if candidates is None:
+        candidates = (*trace.threats, trace.winner_audit)
 
     rows: list[IncidenceRow] = [
         IncidenceRow(
@@ -235,33 +259,8 @@ def _decision_incidence_table(trace: DecisionTrace) -> IncidenceTable:
             leading=("A", str(trace.previous), f"a_{trace.n - 1}"),
             coordinates=_incidence_coordinates(trace.previous),
         ),
+        *(_decision_candidate_row(trace, audit) for audit in candidates),
     ]
-    for threat in trace.threats:
-        rows.append(
-            IncidenceRow(
-                leading=(
-                    "T",
-                    str(threat.value),
-                    f"a_{threat.used_at}" if threat.used_at is not None else "UNPAID",
-                ),
-                coordinates=_incidence_coordinates(
-                    threat.value,
-                    introduced=threat.introduced_primes,
-                    mark_roles=True,
-                ),
-            )
-        )
-    winner = trace.winner_audit
-    rows.append(
-        IncidenceRow(
-            leading=("W", str(winner.value), f"a_{trace.n}"),
-            coordinates=_incidence_coordinates(
-                winner.value,
-                introduced=winner.introduced_primes,
-                mark_roles=True,
-            ),
-        )
-    )
     features = tuple(
         sorted(
             {
@@ -278,24 +277,98 @@ def _decision_incidence_table(trace: DecisionTrace) -> IncidenceTable:
     )
 
 
+def _incidence_table_width(table: IncidenceTable) -> int:
+    rendered = render_incidence_text(table, max_width=0)
+    return max((len(line) for line in rendered.splitlines()), default=0)
+
+
+def _decision_incidence_tables(
+    trace: DecisionTrace,
+    *,
+    max_width: int,
+    candidates_per_table: int,
+) -> tuple[tuple[int, int, IncidenceTable], ...]:
+    """Split candidate rows into self-contained tables that repeat B and A.
+
+    Candidate order is preserved. A positive ``max_width`` is a soft bound: a
+    table is closed before adding a candidate that would exceed it. A positive
+    ``candidates_per_table`` adds an independent row-count cap. A single
+    candidate is never split, even if its table alone exceeds ``max_width``.
+    """
+
+    if max_width < 0:
+        raise ValueError("max_width must be nonnegative")
+    if candidates_per_table < 0:
+        raise ValueError("candidates_per_table must be nonnegative")
+
+    candidates = [*trace.threats, trace.winner_audit]
+    groups: list[list[CandidateAudit]] = []
+    current: list[CandidateAudit] = []
+
+    for audit in candidates:
+        split_for_count = (
+            bool(current)
+            and candidates_per_table > 0
+            and len(current) >= candidates_per_table
+        )
+        split_for_width = False
+        if current and not split_for_count and max_width > 0:
+            trial = [*current, audit]
+            split_for_width = _incidence_table_width(
+                _decision_incidence_table(trace, trial)
+            ) > max_width
+
+        if split_for_count or split_for_width:
+            groups.append(current)
+            current = []
+        current.append(audit)
+
+    if current:
+        groups.append(current)
+
+    tables: list[tuple[int, int, IncidenceTable]] = []
+    start = 1
+    for group in groups:
+        end = start + len(group) - 1
+        tables.append((start, end, _decision_incidence_table(trace, group)))
+        start = end + 1
+    return tuple(tables)
+
+
 def _render_trace_text(
     trace: DecisionTrace,
     *,
     diagnostics: bool,
     max_width: int,
+    candidates_per_table: int,
 ) -> str:
-    table = _decision_incidence_table(trace)
+    tables = _decision_incidence_tables(
+        trace,
+        max_width=max_width,
+        candidates_per_table=candidates_per_table,
+    )
     lines = [
         f"EW step {trace.n}: choose a_{trace.n} = {trace.winner}",
         f"least unused = {trace.least_unused}; legal carry primes = {_human_primes(trace.legal_carriers)}",
         "",
-        render_incidence_text(table, max_width=max_width),
-        "",
-        "role: B=two-back, A=previous, T=smaller admissible threat, W=winner",
-        f"T/W cells: bare exponent = shared with a_{trace.n - 1}; +exponent = newly introduced prime",
-        "B/A cells: ordinary prime exponents; blank cell = prime absent",
-        "",
     ]
+
+    for index, (start, end, table) in enumerate(tables, start=1):
+        if len(tables) > 1:
+            lines.append(f"candidate rows {start}–{end} ({index}/{len(tables)})")
+        lines.append(render_incidence_text(table, max_width=0))
+        lines.append("")
+
+    if len(tables) > 1:
+        lines.append("Each table repeats B and A; prime columns are local to the candidates shown.")
+    lines.extend(
+        (
+            "role: B=two-back, A=previous, T=smaller admissible threat, W=winner",
+            f"T/W cells: bare exponent = shared with a_{trace.n - 1}; +exponent = newly introduced prime",
+            "B/A cells: ordinary prime exponents; blank cell = prime absent",
+            "",
+        )
+    )
 
     if trace.threats:
         lines.append(
@@ -356,12 +429,16 @@ def render_decision_trace(
     *,
     output_format: OutputFormat | str = OutputFormat.TEXT,
     diagnostics: bool = False,
-    max_width: int = 0,
+    max_width: int = 160,
+    candidates_per_table: int = 0,
 ) -> str:
     """Render one exact greedy decision in the requested output format.
 
-    Text output is unlimited-width by default. Pass a positive ``max_width`` to
-    explicitly request prime-column paneling.
+    Text output groups consecutive candidate rows into self-contained incidence
+    tables. Each table repeats the two incoming EW terms. ``max_width`` is a
+    soft line-width bound used to choose candidate groups; ``0`` disables width
+    splitting. ``candidates_per_table`` optionally caps candidate rows per table.
+    If both are positive, whichever bound is reached first starts a new table.
     """
 
     format_ = OutputFormat(output_format)
@@ -370,6 +447,7 @@ def render_decision_trace(
             trace,
             diagnostics=diagnostics,
             max_width=max_width,
+            candidates_per_table=candidates_per_table,
         )
     if format_ is OutputFormat.MARKDOWN:
         return _render_trace_markdown(trace, diagnostics=diagnostics)
