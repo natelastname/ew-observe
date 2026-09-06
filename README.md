@@ -33,7 +33,7 @@ The first-pass implementation deliberately uses an exhaustive reference oracle. 
 - `two-back-conflict`;
 - `no-new-prime`.
 
-The locally admissible values below `W` form the **threat set**. Greedy minimality requires every threat to have been used earlier. The default human-facing output is therefore a compact aligned **greedy race** showing each threat, its prime roles, and the exact earlier index at which history paid it.
+The locally admissible values below `W` form the **threat set**. Greedy minimality requires every threat to have been used earlier. The default human-facing output places the incoming state, every smaller threat, and the winner into one sparse prime-incidence table.
 
 The full exhaustive scan remains available lazily through the Python API and serves as the reference oracle for later optimized reconstructions.
 
@@ -62,7 +62,33 @@ uv run ew-observe step 11
 uv run ew-observe candidate 11 14
 ```
 
-The default `text` format uses an aligned whitespace grid in the same spirit as the `lex-earliest-seqs` incidence tables. In the compact factor-role notation, a bare prime is shared with the predecessor and `+p` is introduced relative to the predecessor. Thus at `a_11 = 18`, for example, `2·+3^2` means that `2` is retained and `3` is new.
+The default `step` view is a prime-coordinate incidence table in the same style as the `lex-earliest-seqs` tables. For example, the early `a_11 = 18` decision is represented schematically as
+
+```text
+role object occurrence 2  3 5  7 11
+---- ------ ---------- - -- - -- --
+   B     55        a_9      1     1
+   A     10       a_10 1    1
+   T      6        a_3 1 +1
+   T     12        a_7 2 +1
+   T     14        a_6 1      +1
+   W     18       a_11 1 +2
+```
+
+Here:
+
+- `B` is the two-back term;
+- `A` is the predecessor;
+- `T` is a smaller locally admissible threat, with `occurrence` giving the earlier term that paid it;
+- `W` is the observed winner;
+- on `T`/`W` rows, a bare exponent means that prime is shared with `A`, while `+e` means a newly introduced prime with exponent `e`;
+- `B`/`A` rows use ordinary prime exponents.
+
+Prime columns split into panels automatically when the table would exceed the terminal width. The default is 120 columns and can be changed with, for example,
+
+```bash
+uv run ew-observe step 11 --max-width 80
+```
 
 All microscope commands support explicit output formats:
 
@@ -76,10 +102,12 @@ uv run ew-observe step 11 --format csv
 uv run ew-observe candidate 11 14 --format json
 ```
 
-- `text` is optimized for terminal reading;
+- `text` is optimized for terminal reading and uses the sparse incidence view;
 - `markdown` is retained for research notes and generated artifacts;
 - `json` preserves the complete structured decision certificate, including prime sets and rejection reasons;
 - `tsv` and `csv` emit one flat row per threat/winner for analysis pipelines.
+
+The human incidence notation is never the source of truth for machine output. JSON carries the actual support, retained-prime, introduced-prime, and rejection-reason arrays directly; TSV/CSV expose those fields explicitly.
 
 `--diagnostics` adds overlapping exhaustive rejection counts to human-oriented `step` output. The structured JSON representation always includes those counts.
 
