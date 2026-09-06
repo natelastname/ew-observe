@@ -6,10 +6,6 @@ from ew_observe.queue_depth import (
     exact_support_queue_depth,
     exact_support_queue_value,
 )
-from ew_observe.queue_depth_presentation import (
-    queue_depth_candidate_order,
-    render_queue_depth_decision_trace,
-)
 from ew_observe.queue_frontier_presentation import ordered_queue_frontiers
 
 
@@ -30,77 +26,64 @@ def test_exact_support_queue_depth_is_zero_based_rank():
     assert exact_support_queue_value(frozenset({2, 7}), 1) == 28
 
 
-def test_legacy_exhaustive_queue_depth_order_remains_available():
-    trace = EWObserver(EW_PREFIX_23[:11]).trace_step(11)
-    ordered = queue_depth_candidate_order(trace)
-
-    assert [audit.value for audit in ordered] == [12, 6, 14, 18]
-    assert [exact_support_queue_depth(audit.value) for audit in ordered] == [1, 0, 0, 2]
-
-    rendered = render_queue_depth_decision_trace(trace, max_width=0)
-    assert "role object depth" in rendered
-
-
-def test_queue_depth_orders_losing_queue_frontiers_not_historical_members():
+def test_depth_is_a_sort_order_not_a_collapse_switch_side_effect():
     trace = EWObserver(EW_PREFIX_23).trace_queue_heads(23)
-    ordered = ordered_queue_frontiers(trace, queue_depth_order=True)
+    ordered = ordered_queue_frontiers(trace, sort_order="depth")
 
-    assert [queue.frontier_value for queue in ordered] == [20, 28, 22, 26, 38]
-    assert [queue.depth for queue in ordered] == [2, 2, 1, 1, 0]
-    assert ordered[-1].is_winner
+    assert [queue.frontier_value for queue in ordered] == [20, 28, 22, 26]
+    assert [queue.depth for queue in ordered] == [2, 2, 1, 1]
 
 
-def test_step_queue_depth_reorders_default_frontier_view(monkeypatch, capsys):
+def test_queue_depth_flag_controls_human_collapse(monkeypatch, capsys):
     monkeypatch.setattr(
         cli_module,
         "_load_ew_terms",
         lambda count: tuple(EW_PREFIX_23[:count]),
     )
 
-    cli_module.step(23, queue_depth=True, max_width=0)
+    cli_module.step(11, queue_depth=True, max_width=0)
+    collapsed = capsys.readouterr().out
+    assert "queue-frontier mode" in collapsed
+    assert "L     14" in collapsed
+    assert "T      6" not in collapsed
 
+    cli_module.step(11, queue_depth=False, max_width=0)
+    expanded = capsys.readouterr().out
+    assert "expanded threat view" in expanded
+    assert "T      6" in expanded
+    assert "T     12" in expanded
+    assert "T     14" in expanded
+
+
+def test_sort_depth_changes_human_order_without_changing_collapse(monkeypatch, capsys):
+    monkeypatch.setattr(
+        cli_module,
+        "_load_ew_terms",
+        lambda count: tuple(EW_PREFIX_23[:count]),
+    )
+
+    cli_module.step(23, sort="depth", max_width=0)
     output = capsys.readouterr().out
-    assert "queue-frontier mode: losing queues sorted by descending depth" in output
-    queue_lines = [
-        line
-        for line in output.splitlines()
-        if line.lstrip().startswith(("L ", "W "))
-    ]
-    assert [int(line.split()[1]) for line in queue_lines] == [20, 28, 22, 26, 38]
+    losing_lines = [line for line in output.splitlines() if line.lstrip().startswith("L ")]
+    assert [int(line.split()[1]) for line in losing_lines] == [20, 28, 22, 26]
 
 
-def test_step_queue_depth_json_is_machine_readable(monkeypatch, capsys):
+def test_human_sort_and_collapse_flags_do_not_reorder_machine_json(monkeypatch, capsys):
     monkeypatch.setattr(
         cli_module,
         "_load_ew_terms",
         lambda count: tuple(EW_PREFIX_23[:count]),
     )
 
-    cli_module.step(23, queue_depth=True, format="json")
-
+    cli_module.step(23, sort="depth", queue_depth=False, format="json")
     payload = json.loads(capsys.readouterr().out)
+
     assert payload["view"] == "queue-frontiers"
-    assert payload["ordering"] == "queue-depth-desc,display-value-asc,winner-last"
+    assert payload["ordering"] == "display-value-asc,winner-last"
     assert [(row["display_value"], row["queue_depth"]) for row in payload["queues"]] == [
         (20, 2),
-        (28, 2),
         (22, 1),
         (26, 1),
+        (28, 2),
         (38, 0),
     ]
-
-
-def test_step_default_is_frontier_value_order(monkeypatch, capsys):
-    monkeypatch.setattr(
-        cli_module,
-        "_load_ew_terms",
-        lambda count: tuple(EW_PREFIX_23[:count]),
-    )
-
-    cli_module.step(11, max_width=0)
-
-    output = capsys.readouterr().out
-    assert "queue-frontier mode: one row per represented exact-support queue" in output
-    assert "L     14" in output
-    assert "W     18" in output
-    assert "role object occurrence" not in output
