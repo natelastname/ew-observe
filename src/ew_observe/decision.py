@@ -4,6 +4,12 @@ This module is intentionally a reference oracle rather than an optimized EW
 generator. For a supplied real EW prefix it reconstructs the mathematical scan
 that certifies the selected term is the least unused admissible positive
 integer.
+
+In addition to the primitive EW admissibility conditions, the observer exposes
+the proved fresh-prime frontier reduction. If Q_n is the least prime not yet
+seen before a_n, no winning candidate needs any prime greater than Q_n. The
+primitive classification is retained separately so the reduction never becomes
+part of the sequence definition by accident.
 """
 
 from __future__ import annotations
@@ -12,13 +18,14 @@ from collections import Counter
 from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
 from enum import Enum
+from functools import lru_cache
 from math import gcd
 
 Support = frozenset[int]
 
 
 class RejectionReason(str, Enum):
-    """Independent reasons a positive integer cannot win an EW step."""
+    """Independent primitive reasons a positive integer cannot win an EW step."""
 
     USED_BEFORE = "used-before"
     NO_PREDECESSOR_OVERLAP = "no-predecessor-overlap"
@@ -26,10 +33,17 @@ class RejectionReason(str, Enum):
     NO_NEW_PRIME = "no-new-prime"
 
 
+class ReductionReason(str, Enum):
+    """Safe theorem-level reductions applied after primitive EW admissibility."""
+
+    PRIME_BEYOND_LEAST_UNINTRODUCED = "prime-beyond-least-unintroduced"
+
+
 class GreedyTraceError(ValueError):
     """Raised when the supplied prefix is inconsistent with the EW greedy rule."""
 
 
+@lru_cache(maxsize=None)
 def prime_support(value: int) -> Support:
     """Return the distinct prime divisors of a positive integer."""
 
@@ -47,6 +61,12 @@ def prime_support(value: int) -> Support:
     if remaining > 1:
         factors.add(remaining)
     return frozenset(factors)
+
+
+def _is_prime(value: int) -> bool:
+    if value < 2:
+        return False
+    return prime_support(value) == frozenset({value})
 
 
 def _has_new_prime(value: int, previous_support: Support) -> bool:
@@ -69,7 +89,7 @@ def _support_label(support: Support) -> str:
 
 @dataclass(frozen=True, slots=True)
 class CandidateAudit:
-    """Exact status of one candidate at one EW selection step."""
+    """Exact primitive and reduced status of one candidate at one EW step."""
 
     n: int
     value: int
@@ -79,11 +99,14 @@ class CandidateAudit:
     two_back_overlap: Support
     retained_primes: Support
     introduced_primes: Support
+    least_unintroduced_prime: int
+    primes_beyond_fresh_frontier: Support
     rejection_reasons: tuple[RejectionReason, ...]
+    reduction_reasons: tuple[ReductionReason, ...]
 
     @property
     def structurally_admissible(self) -> bool:
-        """Whether the candidate satisfies the three local EW conditions."""
+        """Whether the candidate satisfies the three primitive local EW conditions."""
 
         structural = {
             RejectionReason.NO_PREDECESSOR_OVERLAP,
@@ -94,9 +117,27 @@ class CandidateAudit:
 
     @property
     def globally_admissible(self) -> bool:
-        """Whether the candidate is both locally admissible and unused."""
+        """Whether the candidate is unused and primitive-locally admissible."""
 
         return not self.rejection_reasons
+
+    @property
+    def in_reduced_candidate_universe(self) -> bool:
+        """Whether the fresh-prime frontier theorem leaves the candidate in play."""
+
+        return not self.reduction_reasons
+
+    @property
+    def reduced_structurally_admissible(self) -> bool:
+        """Primitive structural admissibility after the fresh-prime reduction."""
+
+        return self.structurally_admissible and self.in_reduced_candidate_universe
+
+    @property
+    def reduced_globally_admissible(self) -> bool:
+        """Whether the candidate can actually compete in the reduced EW universe."""
+
+        return self.globally_admissible and self.in_reduced_candidate_universe
 
 
 @dataclass(frozen=True, slots=True)
@@ -112,10 +153,12 @@ class DecisionTrace:
     winner_support: Support
     legal_carriers: Support
     least_unused: int
+    least_unintroduced_prime: int
     threats: tuple[CandidateAudit, ...]
     winner_audit: CandidateAudit
     values_below_winner: int
     used_below_winner: int
+    fresh_frontier_pruned_threats: int
     rejection_reason_counts: tuple[tuple[RejectionReason, int], ...]
 
     @property
@@ -152,9 +195,13 @@ class EWObserver:
             raise ValueError("EW terms must be positive integers")
         self.terms = tuple(terms)
         first_positions: dict[int, int] = {}
+        prime_first_positions: dict[int, int] = {}
         for n, term in enumerate(self.terms, start=1):
             first_positions.setdefault(term, n)
+            for prime in prime_support(term):
+                prime_first_positions.setdefault(prime, n)
         self._first_positions = first_positions
+        self._prime_first_positions = prime_first_positions
 
     def _state(self, n: int) -> tuple[int, int, int, Support, Support]:
         if n < 3:
@@ -178,6 +225,26 @@ class EWObserver:
         position = self._first_positions.get(value)
         return position if position is not None and position < n else None
 
+    def prime_used_at_before(self, prime: int, n: int) -> int | None:
+        """Return the first term index containing ``prime`` before step ``n``."""
+
+        if not _is_prime(prime):
+            raise ValueError("value must be prime")
+        position = self._prime_first_positions.get(prime)
+        return position if position is not None and position < n else None
+
+    def least_unintroduced_prime_before(self, n: int) -> int:
+        """Return the least prime absent from all terms before selection ``n``."""
+
+        if n < 1 or n > len(self.terms) + 1:
+            raise ValueError("n is outside the supplied prefix")
+
+        candidate = 2
+        while True:
+            if _is_prime(candidate) and self.prime_used_at_before(candidate, n) is None:
+                return candidate
+            candidate += 1
+
     def least_unused_before(self, n: int) -> int:
         """Return the least positive integer not used before selection ``n``."""
 
@@ -189,7 +256,7 @@ class EWObserver:
         return value
 
     def audit_candidate(self, n: int, value: int) -> CandidateAudit:
-        """Classify one positive integer against the exact state before ``a_n``."""
+        """Classify one integer against both primitive and reduced EW conditions."""
 
         if value < 1:
             raise ValueError("candidate value must be positive")
@@ -199,6 +266,10 @@ class EWObserver:
         two_back_overlap = support & two_back_support
         introduced = support - previous_support
         used_at = self.used_at_before(value, n)
+        least_unintroduced = self.least_unintroduced_prime_before(n)
+        beyond_frontier = frozenset(
+            prime for prime in support if prime > least_unintroduced
+        )
 
         reasons: list[RejectionReason] = []
         if used_at is not None:
@@ -210,6 +281,10 @@ class EWObserver:
         if not introduced:
             reasons.append(RejectionReason.NO_NEW_PRIME)
 
+        reductions: list[ReductionReason] = []
+        if beyond_frontier:
+            reductions.append(ReductionReason.PRIME_BEYOND_LEAST_UNINTRODUCED)
+
         return CandidateAudit(
             n=n,
             value=value,
@@ -219,7 +294,10 @@ class EWObserver:
             two_back_overlap=two_back_overlap,
             retained_primes=predecessor_overlap,
             introduced_primes=introduced,
+            least_unintroduced_prime=least_unintroduced,
+            primes_beyond_fresh_frontier=beyond_frontier,
             rejection_reasons=tuple(reasons),
+            reduction_reasons=tuple(reductions),
         )
 
     def iter_candidate_audits(
@@ -228,11 +306,10 @@ class EWObserver:
         *,
         include_winner: bool = True,
     ) -> Iterator[CandidateAudit]:
-        """Yield the complete detailed scan from ``1`` through the observed winner.
+        """Yield the primitive detailed scan from ``1`` through the observed winner.
 
-        This is deliberately exhaustive and may be expensive for a very large
-        winner. ``trace_step`` performs the same exact classification while only
-        materializing detailed audits for the threat ledger and the winner.
+        Every audit also records whether the fresh-prime frontier reduction
+        discards it. This remains deliberately exhaustive and may be expensive.
         """
 
         _two_back, _previous, winner, _two_back_support, _previous_support = self._state(n)
@@ -241,13 +318,15 @@ class EWObserver:
             yield self.audit_candidate(n, value)
 
     def trace_step(self, n: int) -> DecisionTrace:
-        """Return an exact compact greedy certificate for the observed term ``a_n``."""
+        """Return an exact compact certificate in the reduced candidate universe."""
 
         two_back, previous, winner, two_back_support, previous_support = self._state(n)
+        least_unintroduced = self.least_unintroduced_prime_before(n)
         reason_counts: Counter[RejectionReason] = Counter()
         threats: list[CandidateAudit] = []
         used_below = 0
         first_unpaid_threat: int | None = None
+        fresh_frontier_pruned = 0
 
         for value in range(1, winner):
             used_at = self.used_at_before(value, n)
@@ -268,11 +347,14 @@ class EWObserver:
             if no_new_prime:
                 reason_counts[RejectionReason.NO_NEW_PRIME] += 1
 
-            structurally_admissible = not (
+            primitive_structurally_admissible = not (
                 no_overlap or two_back_conflict or no_new_prime
             )
-            if structurally_admissible:
+            if primitive_structurally_admissible:
                 audit = self.audit_candidate(n, value)
+                if not audit.in_reduced_candidate_universe:
+                    fresh_frontier_pruned += 1
+                    continue
                 threats.append(audit)
                 if not used and first_unpaid_threat is None:
                     first_unpaid_threat = value
@@ -283,11 +365,17 @@ class EWObserver:
                 reason.value for reason in winner_audit.rejection_reasons
             )
             raise GreedyTraceError(
-                f"observed winner a_{n}={winner} is not globally admissible: {reasons}"
+                f"observed winner a_{n}={winner} is not primitive-globally admissible: {reasons}"
+            )
+        if not winner_audit.in_reduced_candidate_universe:
+            beyond = _support_label(winner_audit.primes_beyond_fresh_frontier)
+            raise GreedyTraceError(
+                f"observed winner a_{n}={winner} uses prime(s) {beyond} beyond "
+                f"least unintroduced prime Q_{n}={least_unintroduced}"
             )
         if first_unpaid_threat is not None:
             raise GreedyTraceError(
-                f"unused admissible value {first_unpaid_threat} is below observed winner "
+                f"unused reduced-admissible value {first_unpaid_threat} is below observed winner "
                 f"a_{n}={winner}"
             )
 
@@ -304,10 +392,12 @@ class EWObserver:
             winner_support=winner_audit.support,
             legal_carriers=previous_support - two_back_support,
             least_unused=self.least_unused_before(n),
+            least_unintroduced_prime=least_unintroduced,
             threats=tuple(threats),
             winner_audit=winner_audit,
             values_below_winner=winner - 1,
             used_below_winner=used_below,
+            fresh_frontier_pruned_threats=fresh_frontier_pruned,
             rejection_reason_counts=ordered_counts,
         )
 
@@ -316,6 +406,7 @@ def render_candidate_audit(audit: CandidateAudit) -> str:
     """Render one candidate audit in compact human-readable text."""
 
     reasons = ", ".join(reason.value for reason in audit.rejection_reasons) or "none"
+    reductions = ", ".join(reason.value for reason in audit.reduction_reasons) or "none"
     used = str(audit.used_at) if audit.used_at is not None else "-"
     return "\n".join(
         (
@@ -325,15 +416,20 @@ def render_candidate_audit(audit: CandidateAudit) -> str:
             f"introduced: {_support_label(audit.introduced_primes)}",
             f"two-back overlap: {_support_label(audit.two_back_overlap)}",
             f"used before at: {used}",
-            f"structurally admissible: {audit.structurally_admissible}",
-            f"globally admissible: {audit.globally_admissible}",
-            f"rejection reasons: {reasons}",
+            f"least unintroduced prime: {audit.least_unintroduced_prime}",
+            f"primes beyond fresh frontier: {_support_label(audit.primes_beyond_fresh_frontier)}",
+            f"primitive structurally admissible: {audit.structurally_admissible}",
+            f"primitive globally admissible: {audit.globally_admissible}",
+            f"in reduced candidate universe: {audit.in_reduced_candidate_universe}",
+            f"reduced globally admissible: {audit.reduced_globally_admissible}",
+            f"primitive rejection reasons: {reasons}",
+            f"reduction reasons: {reductions}",
         )
     )
 
 
 def render_decision_trace(trace: DecisionTrace) -> str:
-    """Render the default microscope view: state plus the paid threat ledger."""
+    """Render the default microscope view: state plus the reduced threat ledger."""
 
     lines = [
         f"EW greedy decision n={trace.n}",
@@ -344,8 +440,9 @@ def render_decision_trace(trace: DecisionTrace) -> str:
         f"  W = a_{trace.n} = {trace.winner}  support={_support_label(trace.winner_support)}",
         f"  legal carriers P(A) \\ P(B) = {_support_label(trace.legal_carriers)}",
         f"  least unused before selection = {trace.least_unused}",
+        f"  least unintroduced prime Q_{trace.n} = {trace.least_unintroduced_prime}",
         "",
-        "threat ledger",
+        "reduced threat ledger",
         "| value | support | retained | introduced | used at | status |",
         "| ---: | --- | --- | --- | ---: | --- |",
     ]
@@ -386,7 +483,8 @@ def render_decision_trace(trace: DecisionTrace) -> str:
             "summary",
             f"  values below winner: {trace.values_below_winner}",
             f"  used values below winner: {trace.used_below_winner}",
-            f"  locally admissible threats: {len(trace.threats)}",
+            f"  reduced locally admissible threats: {len(trace.threats)}",
+            f"  primitive threats pruned by fresh-prime frontier: {trace.fresh_frontier_pruned_threats}",
             f"  historically paid threats: {trace.paid_threat_count}",
             f"  unpaid threats: {trace.unpaid_threat_count}",
         )
@@ -395,7 +493,7 @@ def render_decision_trace(trace: DecisionTrace) -> str:
     if last is not None:
         lines.append(f"  last threat paid: {last.value} at n={last.used_at}")
 
-    lines.extend(("", "rejection counts below winner (overlapping)"))
+    lines.extend(("", "primitive rejection counts below winner (overlapping)"))
     for reason, count in trace.rejection_reason_counts:
         lines.append(f"  {reason.value}: {count}")
     return "\n".join(lines)
