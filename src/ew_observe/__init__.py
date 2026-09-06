@@ -1,6 +1,21 @@
-# -*- coding: utf-8 -*-
-"""
-Created on 2026-09-05T20:26:46-04:00
+"""Instrumented research tooling for the Enots--Wolley greedy sequence."""
 
-@author: nate
-"""
+from .decision import (
+    CandidateAudit,
+    DecisionTrace,
+    EWObserver,
+    GreedyTraceError,
+    RejectionReason,
+    render_candidate_audit,
+    render_decision_trace,
+)
+
+__all__ = [
+    "CandidateAudit",
+    "DecisionTrace",
+    "EWObserver",
+    "GreedyTraceError",
+    "RejectionReason",
+    "render_candidate_audit",
+    "render_decision_trace",
+]
