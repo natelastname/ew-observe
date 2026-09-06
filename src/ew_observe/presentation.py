@@ -356,9 +356,13 @@ def render_decision_trace(
     *,
     output_format: OutputFormat | str = OutputFormat.TEXT,
     diagnostics: bool = False,
-    max_width: int = 120,
+    max_width: int = 0,
 ) -> str:
-    """Render one exact greedy decision in the requested output format."""
+    """Render one exact greedy decision in the requested output format.
+
+    Text output is unlimited-width by default. Pass a positive ``max_width`` to
+    explicitly request prime-column paneling.
+    """
 
     format_ = OutputFormat(output_format)
     if format_ is OutputFormat.TEXT:
