@@ -8,6 +8,7 @@ from .decision import prime_support
 from .lifecycle_presentation import render_candidate_lifecycle
 from .observer import EWObserver
 from .presentation import OutputFormat, render_candidate_audit, render_decision_trace
+from .queue_depth_presentation import render_queue_depth_decision_trace
 
 app = App()
 
@@ -62,6 +63,7 @@ def step(
     diagnostics: bool = False,
     max_width: int = 160,
     candidates_per_table: int = 0,
+    queue_depth: bool = False,
 ) -> None:
     """Explain the exact greedy choice of ``a_n`` using the threat ledger.
 
@@ -70,16 +72,32 @@ def step(
     terms. ``--max-width`` is a soft width bound for automatic candidate
     grouping; use ``0`` for one unlimited table. ``--candidates-per-table``
     optionally sets an explicit candidate-row cap.
+
+    ``--queue-depth`` is an optional text mode: replace occurrence indices with
+    zero-based exact-support queue depth and sort paid threats by descending
+    depth, breaking ties by ascending numerical value. The winner remains last.
     """
 
     observer = EWObserver(_load_ew_terms(n))
-    rendered = render_decision_trace(
-        observer.trace_step(n),
-        output_format=OutputFormat(format),
-        diagnostics=diagnostics,
-        max_width=max_width,
-        candidates_per_table=candidates_per_table,
-    )
+    trace = observer.trace_step(n)
+    format_ = OutputFormat(format)
+    if queue_depth:
+        if format_ is not OutputFormat.TEXT:
+            raise ValueError("--queue-depth currently applies only to --format text")
+        rendered = render_queue_depth_decision_trace(
+            trace,
+            diagnostics=diagnostics,
+            max_width=max_width,
+            candidates_per_table=candidates_per_table,
+        )
+    else:
+        rendered = render_decision_trace(
+            trace,
+            output_format=format_,
+            diagnostics=diagnostics,
+            max_width=max_width,
+            candidates_per_table=candidates_per_table,
+        )
     sys.stdout.write(rendered)
 
 
