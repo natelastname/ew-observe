@@ -15,7 +15,6 @@ from .decision import (
     CandidateAudit,
     EWObserver as BaseEWObserver,
     GreedyTraceError,
-    RejectionReason,
     Support,
     prime_support,
 )
@@ -53,7 +52,7 @@ class CandidateLifecycleStep:
         """Prime face made legal for the following step by this winner.
 
         At the next selection the current predecessor/winner pair becomes
-        ``(previous, winner)``.  Hence the next legal carrier set is exactly
+        ``(previous, winner)``. Hence the next legal carrier set is exactly
         ``P(winner) \\ P(previous)``, i.e. the primes introduced by the winner.
         """
 
@@ -104,7 +103,7 @@ class CandidateLifecycleTrace:
         return None
 
 
-def _is_globally_admissible(
+def _is_reduced_globally_admissible(
     observer: BaseEWObserver,
     *,
     n: int,
@@ -112,12 +111,18 @@ def _is_globally_admissible(
     two_back: int,
     previous: int,
     previous_support: Support,
+    least_unintroduced_prime: int,
 ) -> bool:
+    """Fast lifecycle predicate for the reduced EW candidate universe."""
+
     if observer.used_at_before(value, n) is not None:
         return False
     if gcd(value, previous) == 1 or gcd(value, two_back) != 1:
         return False
-    return bool(prime_support(value) - previous_support)
+    support = prime_support(value)
+    if not (support - previous_support):
+        return False
+    return not any(prime > least_unintroduced_prime for prime in support)
 
 
 def _beating_candidates(
@@ -129,10 +134,11 @@ def _beating_candidates(
     two_back: int,
     previous: int,
     previous_support: Support,
+    least_unintroduced_prime: int,
 ) -> tuple[int, ...]:
-    """Return every currently live candidate strictly below ``target``.
+    """Return every currently live reduced candidate strictly below ``target``.
 
-    For a valid EW prefix, ``winner`` is the least such value.  Starting the
+    For a valid EW prefix, ``winner`` is the least such value. Starting the
     scan at the observed winner avoids rechecking the entire lower integer
     interval while still producing the exact rank of the tracked candidate.
     """
@@ -142,18 +148,19 @@ def _beating_candidates(
     values = tuple(
         value
         for value in range(winner, target)
-        if _is_globally_admissible(
+        if _is_reduced_globally_admissible(
             observer,
             n=n,
             value=value,
             two_back=two_back,
             previous=previous,
             previous_support=previous_support,
+            least_unintroduced_prime=least_unintroduced_prime,
         )
     )
     if not values or values[0] != winner:
         raise GreedyTraceError(
-            f"observed winner a_{n}={winner} is not the least live value below "
+            f"observed winner a_{n}={winner} is not the least live reduced value below "
             f"tracked candidate {target}"
         )
     return values
@@ -168,12 +175,11 @@ def trace_candidate_lifecycle(
 ) -> CandidateLifecycleTrace:
     """Track one fixed positive integer through consecutive EW states.
 
-    ``start`` and ``stop`` are inclusive one-based sequence indices.  Whenever
-    the tracked candidate is globally live but loses, the trace records *all*
-    globally live candidates below it, its exact live rank, and the actual
-    greedy winner.  Every row also records the support transition
-    ``previous -> winner``; the introduced primes are exactly the legal carrier
-    face for the following step.
+    ``start`` and ``stop`` are inclusive one-based sequence indices. Whenever
+    the tracked candidate is live in the reduced candidate universe but loses,
+    the trace records all reduced-live candidates below it, its exact live
+    rank, and the actual greedy winner. Every row also records the support
+    transition ``previous -> winner``.
     """
 
     if value < 1:
@@ -196,15 +202,20 @@ def trace_candidate_lifecycle(
         previous_support = prime_support(previous)
         winner_support = prime_support(winner)
         legal_carriers = previous_support - two_back_support
+        least_unintroduced = observer.least_unintroduced_prime_before(n)
 
         candidate_audit = observer.audit_candidate(n, value)
         winner_audit = observer.audit_candidate(n, winner)
-        if not winner_audit.globally_admissible:
-            reasons = ", ".join(
+        if not winner_audit.reduced_globally_admissible:
+            primitive_reasons = ", ".join(
                 reason.value for reason in winner_audit.rejection_reasons
-            )
+            ) or "none"
+            reduction_reasons = ", ".join(
+                reason.value for reason in winner_audit.reduction_reasons
+            ) or "none"
             raise GreedyTraceError(
-                f"observed winner a_{n}={winner} is not globally admissible: {reasons}"
+                f"observed winner a_{n}={winner} is not reduced-globally admissible: "
+                f"primitive={primitive_reasons}; reduction={reduction_reasons}"
             )
 
         beating_candidates: tuple[int, ...] = ()
@@ -212,16 +223,16 @@ def trace_candidate_lifecycle(
         winning_blocker: int | None = None
 
         if winner == value:
-            if not candidate_audit.globally_admissible:
+            if not candidate_audit.reduced_globally_admissible:
                 raise GreedyTraceError(
-                    f"tracked candidate {value} is observed at a_{n} but is not live"
+                    f"tracked candidate {value} is observed at a_{n} but is not reduced-live"
                 )
             status = CandidateLifecycleStatus.SELECTED
             live_rank = 1
-        elif candidate_audit.globally_admissible:
+        elif candidate_audit.reduced_globally_admissible:
             if winner > value:
                 raise GreedyTraceError(
-                    f"tracked candidate {value} is live at n={n} but observed winner "
+                    f"tracked candidate {value} is reduced-live at n={n} but observed winner "
                     f"{winner} is larger"
                 )
             status = CandidateLifecycleStatus.LIVE_LOST
@@ -233,6 +244,7 @@ def trace_candidate_lifecycle(
                 two_back=two_back,
                 previous=previous,
                 previous_support=previous_support,
+                least_unintroduced_prime=least_unintroduced,
             )
             live_rank = len(beating_candidates) + 1
             winning_blocker = winner
