@@ -9,6 +9,7 @@ from collections.abc import Iterable, Sequence
 from enum import StrEnum
 
 from .decision import CandidateAudit, DecisionTrace
+from .incidence import IncidenceRow, IncidenceTable, render_text as render_incidence_text
 
 
 class OutputFormat(StrEnum):
@@ -57,11 +58,7 @@ def _factorization(value: int) -> str:
 
 
 def _role_factorization(audit: CandidateAudit) -> str:
-    """Render factors with ``+`` marking primes introduced over the predecessor.
-
-    Bare prime factors are retained/shared with the predecessor. The exponent is
-    arithmetic multiplicity only; the role is attached to the underlying prime.
-    """
+    """Render factors with ``+`` marking primes introduced over the predecessor."""
 
     factors = _prime_exponents(audit.value)
     if not factors:
@@ -89,7 +86,7 @@ def _render_grid(
     *,
     right_align: frozenset[int] = frozenset(),
 ) -> str:
-    """Render a compact whitespace grid like the lex-earliest-seqs tables."""
+    """Render a compact whitespace grid."""
 
     if any(len(row) != len(headers) for row in rows):
         raise ValueError("table rows must match header width")
@@ -209,34 +206,94 @@ def _render_delimited(rows: Sequence[dict[str, object]], delimiter: str) -> str:
     return output.getvalue()
 
 
-def _render_trace_text(trace: DecisionTrace, *, diagnostics: bool) -> str:
-    winner = trace.winner_audit
-    rows = [
-        (
-            str(threat.value),
-            _role_factorization(threat),
-            f"used at a_{threat.used_at}" if threat.used_at is not None else "UNPAID",
-        )
-        for threat in trace.threats
-    ]
-    rows.append((str(winner.value), _role_factorization(winner), "WINNER"))
+def _incidence_coordinates(
+    value: int,
+    *,
+    introduced: frozenset[int] = frozenset(),
+    mark_roles: bool = False,
+) -> tuple[tuple[int, str], ...]:
+    """Return prime-exponent cells, optionally marking introduced primes with ``+``."""
 
+    cells: list[tuple[int, str]] = []
+    for prime, exponent in _prime_exponents(value):
+        label = str(exponent)
+        if mark_roles and prime in introduced:
+            label = "+" + label
+        cells.append((prime, label))
+    return tuple(cells)
+
+
+def _decision_incidence_table(trace: DecisionTrace) -> IncidenceTable:
+    """Build the sparse local prime-coordinate table for one greedy decision."""
+
+    rows: list[IncidenceRow] = [
+        IncidenceRow(
+            leading=("B", str(trace.two_back), f"a_{trace.n - 2}"),
+            coordinates=_incidence_coordinates(trace.two_back),
+        ),
+        IncidenceRow(
+            leading=("A", str(trace.previous), f"a_{trace.n - 1}"),
+            coordinates=_incidence_coordinates(trace.previous),
+        ),
+    ]
+    for threat in trace.threats:
+        rows.append(
+            IncidenceRow(
+                leading=(
+                    "T",
+                    str(threat.value),
+                    f"a_{threat.used_at}" if threat.used_at is not None else "UNPAID",
+                ),
+                coordinates=_incidence_coordinates(
+                    threat.value,
+                    introduced=threat.introduced_primes,
+                    mark_roles=True,
+                ),
+            )
+        )
+    winner = trace.winner_audit
+    rows.append(
+        IncidenceRow(
+            leading=("W", str(winner.value), f"a_{trace.n}"),
+            coordinates=_incidence_coordinates(
+                winner.value,
+                introduced=winner.introduced_primes,
+                mark_roles=True,
+            ),
+        )
+    )
+    features = tuple(
+        sorted(
+            {
+                prime
+                for row in rows
+                for prime, _cell in row.coordinates
+            }
+        )
+    )
+    return IncidenceTable(
+        leading_headers=("role", "object", "occurrence"),
+        features=features,
+        rows=tuple(rows),
+    )
+
+
+def _render_trace_text(
+    trace: DecisionTrace,
+    *,
+    diagnostics: bool,
+    max_width: int,
+) -> str:
+    table = _decision_incidence_table(trace)
     lines = [
         f"EW step {trace.n}: choose a_{trace.n} = {trace.winner}",
+        f"least unused = {trace.least_unused}; legal carry primes = {_human_primes(trace.legal_carriers)}",
         "",
-        "Incoming state",
-        f"  a_{trace.n - 2} (two back) = {trace.two_back} = {_factorization(trace.two_back)}",
-        f"  a_{trace.n - 1} (previous) = {trace.previous} = {_factorization(trace.previous)}",
-        f"  carry primes             = {_human_primes(trace.legal_carriers)}",
-        f"  least unused             = {trace.least_unused}",
+        render_incidence_text(table, max_width=max_width),
         "",
-        "Greedy race",
-        f"  Factor notation is relative to a_{trace.n - 1}: bare prime = shared; +prime = new.",
-        _render_grid(
-            ("candidate", "factor roles", "history"),
-            rows,
-            right_align=frozenset({0}),
-        ),
+        "role: B=two-back, A=previous, T=smaller admissible threat, W=winner",
+        f"T/W cells: bare exponent = shared with a_{trace.n - 1}; +exponent = newly introduced prime",
+        "B/A cells: ordinary prime exponents; blank cell = prime absent",
         "",
     ]
 
@@ -299,12 +356,17 @@ def render_decision_trace(
     *,
     output_format: OutputFormat | str = OutputFormat.TEXT,
     diagnostics: bool = False,
+    max_width: int = 120,
 ) -> str:
     """Render one exact greedy decision in the requested output format."""
 
     format_ = OutputFormat(output_format)
     if format_ is OutputFormat.TEXT:
-        return _render_trace_text(trace, diagnostics=diagnostics)
+        return _render_trace_text(
+            trace,
+            diagnostics=diagnostics,
+            max_width=max_width,
+        )
     if format_ is OutputFormat.MARKDOWN:
         return _render_trace_markdown(trace, diagnostics=diagnostics)
     if format_ is OutputFormat.JSON:
