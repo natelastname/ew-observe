@@ -202,6 +202,7 @@ class EWObserver:
                 prime_first_positions.setdefault(prime, n)
         self._first_positions = first_positions
         self._prime_first_positions = prime_first_positions
+        self._least_unintroduced_cache: dict[int, int] = {}
 
     def _state(self, n: int) -> tuple[int, int, int, Support, Support]:
         if n < 3:
@@ -239,9 +240,14 @@ class EWObserver:
         if n < 1 or n > len(self.terms) + 1:
             raise ValueError("n is outside the supplied prefix")
 
+        cached = self._least_unintroduced_cache.get(n)
+        if cached is not None:
+            return cached
+
         candidate = 2
         while True:
             if _is_prime(candidate) and self.prime_used_at_before(candidate, n) is None:
+                self._least_unintroduced_cache[n] = candidate
                 return candidate
             candidate += 1
 
