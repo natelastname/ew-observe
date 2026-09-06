@@ -5,38 +5,11 @@ from __future__ import annotations
 from collections.abc import Sequence
 
 from .decision import CandidateAudit, DecisionTrace
+from .human_sort import prime_exponents, prime_lex_key
 from .incidence import IncidenceRow, IncidenceTable, render_text as render_incidence_text
 from .presentation import OutputFormat
 from .queue_depth import exact_support_queue_depth
 from .queue_frontier_presentation import HUMAN_SORT_ORDERS
-
-
-def _prime_exponents(value: int) -> tuple[tuple[int, int], ...]:
-    if value < 1:
-        raise ValueError("value must be positive")
-    if value == 1:
-        return ()
-    remaining = value
-    factors: list[tuple[int, int]] = []
-    divisor = 2
-    while divisor * divisor <= remaining:
-        exponent = 0
-        while remaining % divisor == 0:
-            remaining //= divisor
-            exponent += 1
-        if exponent:
-            factors.append((divisor, exponent))
-        divisor = 3 if divisor == 2 else divisor + 2
-    if remaining > 1:
-        factors.append((remaining, 1))
-    return tuple(factors)
-
-
-def _prime_factor_word(value: int) -> tuple[int, ...]:
-    word: list[int] = []
-    for prime, exponent in _prime_exponents(value):
-        word.extend([prime] * exponent)
-    return tuple(word)
 
 
 def _coordinates(
@@ -46,7 +19,7 @@ def _coordinates(
     mark_roles: bool = False,
 ) -> tuple[tuple[int, str], ...]:
     cells: list[tuple[int, str]] = []
-    for prime, exponent in _prime_exponents(value):
+    for prime, exponent in prime_exponents(value):
         label = str(exponent)
         if mark_roles and prime in introduced:
             label = "+" + label
@@ -65,7 +38,7 @@ def _ordered_threats(trace: DecisionTrace, *, sort_order: str) -> tuple[Candidat
     elif sort_order == "depth":
         threats.sort(key=lambda audit: (-exact_support_queue_depth(audit.value), audit.value))
     elif sort_order == "prime-lex":
-        threats.sort(key=lambda audit: (_prime_factor_word(audit.value), audit.value))
+        threats.sort(key=lambda audit: (prime_lex_key(audit.value), audit.value))
     else:
         threats.sort(
             key=lambda audit: (
@@ -237,7 +210,12 @@ def _render_markdown(
         candidates_per_table=candidates_per_table,
         sort_order=sort_order,
     )
-    lines = [f"## EW step {trace.n}: expanded threat view", "", f"Human sort: `{sort_order}`.", ""]
+    lines = [
+        f"## EW step {trace.n}: expanded threat view",
+        "",
+        f"Human sort: `{sort_order}`.",
+        "",
+    ]
     for index, group in enumerate(groups, start=1):
         if len(groups) > 1:
             lines.extend((f"### Threat table {index}/{len(groups)}", ""))
