@@ -1,6 +1,7 @@
 import json
 
 from ew_observe import EWObserver, render_decision_trace
+from ew_observe.presentation import _decision_incidence_table
 
 EW_PREFIX = [
     1,
@@ -36,23 +37,37 @@ EW_PREFIX = [
 ]
 
 
-def test_text_trace_is_aligned_and_uses_compact_prime_roles():
+def test_text_trace_is_sparse_prime_incidence_table():
     trace = EWObserver(EW_PREFIX).trace_step(11)
     rendered = render_decision_trace(trace)
 
     assert "EW step 11: choose a_11 = 18" in rendered
-    assert "a_9 (two back) = 55 = 5·11" in rendered
-    assert "a_10 (previous) = 10 = 2·5" in rendered
-    assert "bare prime = shared; +prime = new" in rendered
-    assert "candidate  factor roles" in rendered
-    assert "6  2·+3" in rendered
-    assert "12  2^2·+3" in rendered
-    assert "14  2·+7" in rendered
-    assert "18  2·+3^2" in rendered
-    assert "used at a_3" in rendered
-    assert "WINNER" in rendered
-    assert "| ---" not in rendered
+    assert "role object occurrence" in rendered
+    assert "B=two-back, A=previous, T=smaller admissible threat, W=winner" in rendered
+    assert "bare exponent = shared with a_10; +exponent = newly introduced prime" in rendered
+    assert "Last threat paid: 12 at a_7." in rendered
     assert "Diagnostics" not in rendered
+
+    table = _decision_incidence_table(trace)
+    assert table.features == (2, 3, 5, 7, 11)
+    assert table.rows[0].leading == ("B", "55", "a_9")
+    assert table.rows[0].coordinates == ((5, "1"), (11, "1"))
+    assert table.rows[1].leading == ("A", "10", "a_10")
+    assert table.rows[1].coordinates == ((2, "1"), (5, "1"))
+    assert table.rows[2].leading == ("T", "6", "a_3")
+    assert table.rows[2].coordinates == ((2, "1"), (3, "+1"))
+    assert table.rows[3].coordinates == ((2, "2"), (3, "+1"))
+    assert table.rows[4].coordinates == ((2, "1"), (7, "+1"))
+    assert table.rows[5].leading == ("W", "18", "a_11")
+    assert table.rows[5].coordinates == ((2, "1"), (3, "+2"))
+
+
+def test_text_trace_panels_prime_columns_when_width_is_small():
+    trace = EWObserver(EW_PREFIX).trace_step(11)
+    rendered = render_decision_trace(trace, max_width=32)
+
+    assert "prime columns" in rendered
+    assert "(1/" in rendered
 
 
 def test_markdown_is_retained_as_explicit_export():
