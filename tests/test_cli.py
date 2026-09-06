@@ -83,6 +83,16 @@ def test_step_json_is_machine_readable_and_canonical(monkeypatch, capsys):
     assert payload["queues"][-1]["kind"] == "winner"
 
 
+def test_even_invalid_human_sort_is_ignored_by_machine_output(monkeypatch, capsys):
+    _patch_terms(monkeypatch)
+
+    cli_module.step(23, format="json", sort="not-a-human-sort", queue_depth=False)
+
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["ordering"] == "display-value-asc,winner-last"
+    assert [row["display_value"] for row in payload["queues"]] == [20, 22, 26, 28, 38]
+
+
 def test_step_queue_heads_machine_view_remains_available(monkeypatch, capsys):
     _patch_terms(monkeypatch)
 
