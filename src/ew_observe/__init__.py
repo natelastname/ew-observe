@@ -8,6 +8,7 @@ from .decision import (
     ReductionReason,
     RejectionReason,
 )
+from .decision_presentation import render_decision_trace
 from .lifecycle import (
     CandidateLifecycleStatus,
     CandidateLifecycleStep,
@@ -16,7 +17,7 @@ from .lifecycle import (
 )
 from .lifecycle_presentation import render_candidate_lifecycle
 from .observer import EWObserver
-from .presentation import OutputFormat, render_decision_trace
+from .presentation import OutputFormat
 from .queue_depth import (
     exact_support_queue_depth,
     exact_support_queue_value,
