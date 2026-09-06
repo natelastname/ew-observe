@@ -27,10 +27,12 @@ def step(
     *,
     format: str = "text",
     diagnostics: bool = False,
+    max_width: int = 120,
 ) -> None:
     """Explain the exact greedy choice of ``a_n`` using the threat ledger.
 
-    Formats: text (default), markdown, json, tsv, csv.
+    Formats: text (default), markdown, json, tsv, csv.  Text output uses a sparse
+    prime-incidence table and splits prime columns into panels when needed.
     """
 
     observer = EWObserver(_load_ew_terms(n))
@@ -38,6 +40,7 @@ def step(
         observer.trace_step(n),
         output_format=OutputFormat(format),
         diagnostics=diagnostics,
+        max_width=max_width,
     )
     sys.stdout.write(rendered)
 
