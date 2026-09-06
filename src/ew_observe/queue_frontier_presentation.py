@@ -8,41 +8,12 @@ import json
 from collections.abc import Sequence
 
 from .decision import Support
+from .human_sort import prime_exponents, prime_lex_key
 from .incidence import IncidenceRow, IncidenceTable, render_text as render_incidence_text
 from .presentation import OutputFormat
 from .queue_heads import ExactQueueHead, QueueHeadTrace
 
 HUMAN_SORT_ORDERS = ("value", "prime-lex", "depth", "retained")
-
-
-def _prime_exponents(value: int) -> tuple[tuple[int, int], ...]:
-    if value < 1:
-        raise ValueError("value must be positive")
-    if value == 1:
-        return ()
-    remaining = value
-    factors: list[tuple[int, int]] = []
-    divisor = 2
-    while divisor * divisor <= remaining:
-        exponent = 0
-        while remaining % divisor == 0:
-            remaining //= divisor
-            exponent += 1
-        if exponent:
-            factors.append((divisor, exponent))
-        divisor = 3 if divisor == 2 else divisor + 2
-    if remaining > 1:
-        factors.append((remaining, 1))
-    return tuple(factors)
-
-
-def _prime_factor_word(value: int) -> tuple[int, ...]:
-    """Prime-factor word used by the experimental lexicographic human sort."""
-
-    word: list[int] = []
-    for prime, exponent in _prime_exponents(value):
-        word.extend([prime] * exponent)
-    return tuple(word)
 
 
 def _incidence_coordinates(
@@ -52,7 +23,7 @@ def _incidence_coordinates(
     mark_roles: bool = False,
 ) -> tuple[tuple[int, str], ...]:
     cells: list[tuple[int, str]] = []
-    for prime, exponent in _prime_exponents(value):
+    for prime, exponent in prime_exponents(value):
         label = str(exponent)
         if mark_roles and prime in introduced:
             label = "+" + label
@@ -91,7 +62,7 @@ def ordered_queue_frontiers(
         competitors.sort(key=lambda queue: (-queue.depth, queue.frontier_value))
     elif sort_order == "prime-lex":
         competitors.sort(
-            key=lambda queue: (_prime_factor_word(queue.frontier_value), queue.frontier_value)
+            key=lambda queue: (prime_lex_key(queue.frontier_value), queue.frontier_value)
         )
     else:
         competitors.sort(
