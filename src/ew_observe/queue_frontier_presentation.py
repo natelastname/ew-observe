@@ -12,6 +12,8 @@ from .incidence import IncidenceRow, IncidenceTable, render_text as render_incid
 from .presentation import OutputFormat
 from .queue_heads import ExactQueueHead, QueueHeadTrace
 
+HUMAN_SORT_ORDERS = ("value", "prime-lex", "depth", "retained")
+
 
 def _prime_exponents(value: int) -> tuple[tuple[int, int], ...]:
     if value < 1:
@@ -32,6 +34,15 @@ def _prime_exponents(value: int) -> tuple[tuple[int, int], ...]:
     if remaining > 1:
         factors.append((remaining, 1))
     return tuple(factors)
+
+
+def _prime_factor_word(value: int) -> tuple[int, ...]:
+    """Prime-factor word used by the experimental lexicographic human sort."""
+
+    word: list[int] = []
+    for prime, exponent in _prime_exponents(value):
+        word.extend([prime] * exponent)
+    return tuple(word)
 
 
 def _incidence_coordinates(
@@ -57,27 +68,61 @@ def _primes(primes: Support) -> str:
     return ",".join(str(prime) for prime in sorted(primes))
 
 
+def _retained_primes(trace: QueueHeadTrace, queue: ExactQueueHead) -> Support:
+    return queue.support & trace.decision.previous_support
+
+
 def ordered_queue_frontiers(
     trace: QueueHeadTrace,
     *,
-    queue_depth_order: bool = False,
+    sort_order: str = "value",
 ) -> tuple[ExactQueueHead, ...]:
-    """Order losing queue frontiers, always leaving the winning queue last."""
+    """Order losing queue rows for human display; winner is context, not sortable."""
+
+    if sort_order not in HUMAN_SORT_ORDERS:
+        raise ValueError(
+            f"unknown human sort order {sort_order!r}; choose one of {', '.join(HUMAN_SORT_ORDERS)}"
+        )
 
     competitors = list(trace.competitor_heads)
-    if queue_depth_order:
-        competitors.sort(key=lambda queue: (-queue.depth, queue.frontier_value))
-    else:
+    if sort_order == "value":
         competitors.sort(key=lambda queue: queue.frontier_value)
-    return (*competitors, trace.winner_head)
+    elif sort_order == "depth":
+        competitors.sort(key=lambda queue: (-queue.depth, queue.frontier_value))
+    elif sort_order == "prime-lex":
+        competitors.sort(
+            key=lambda queue: (_prime_factor_word(queue.frontier_value), queue.frontier_value)
+        )
+    else:
+        competitors.sort(
+            key=lambda queue: (
+                min(_retained_primes(trace, queue), default=float("inf")),
+                queue.frontier_value,
+            )
+        )
+    return tuple(competitors)
 
 
-def _row(trace: QueueHeadTrace, queue: ExactQueueHead) -> IncidenceRow:
+def _winner_row(trace: QueueHeadTrace) -> IncidenceRow:
+    decision = trace.decision
+    queue = trace.winner_head
+    introduced = queue.support - decision.previous_support
+    return IncidenceRow(
+        leading=("W", str(decision.winner), str(queue.depth)),
+        coordinates=_incidence_coordinates(
+            decision.winner,
+            introduced=introduced,
+            mark_roles=True,
+        ),
+    )
+
+
+def _loser_row(trace: QueueHeadTrace, queue: ExactQueueHead) -> IncidenceRow:
     decision = trace.decision
     display_value = queue.frontier_value
     introduced = queue.support - decision.previous_support
     return IncidenceRow(
-        leading=("W" if queue.is_winner else "L", str(display_value), str(queue.depth)),
+        leading=("L", str(display_value), str(queue.depth)),
         coordinates=_incidence_coordinates(
             display_value,
             introduced=introduced,
@@ -87,6 +132,8 @@ def _row(trace: QueueHeadTrace, queue: ExactQueueHead) -> IncidenceRow:
 
 
 def _table(trace: QueueHeadTrace, queues: Sequence[ExactQueueHead]) -> IncidenceTable:
+    """Build one self-contained human table with B, A, and W fixed at the top."""
+
     decision = trace.decision
     rows = [
         IncidenceRow(
@@ -97,7 +144,8 @@ def _table(trace: QueueHeadTrace, queues: Sequence[ExactQueueHead]) -> Incidence
             leading=("A", str(decision.previous), ""),
             coordinates=_incidence_coordinates(decision.previous),
         ),
-        *(_row(trace, queue) for queue in queues),
+        _winner_row(trace),
+        *(_loser_row(trace, queue) for queue in queues),
     ]
     features = tuple(
         sorted({prime for row in rows for prime, _cell in row.coordinates})
@@ -119,14 +167,17 @@ def _tables(
     *,
     max_width: int,
     candidates_per_table: int,
-    queue_depth_order: bool,
+    sort_order: str,
 ) -> tuple[tuple[int, int, IncidenceTable], ...]:
     if max_width < 0:
         raise ValueError("max_width must be nonnegative")
     if candidates_per_table < 0:
         raise ValueError("candidates_per_table must be nonnegative")
 
-    queues = list(ordered_queue_frontiers(trace, queue_depth_order=queue_depth_order))
+    queues = list(ordered_queue_frontiers(trace, sort_order=sort_order))
+    if not queues:
+        return ((0, 0, _table(trace, ())),)
+
     groups: list[list[ExactQueueHead]] = []
     current: list[ExactQueueHead] = []
 
@@ -168,17 +219,19 @@ def _queue_payload(queue: ExactQueueHead) -> dict[str, object]:
     }
 
 
-def _payload(trace: QueueHeadTrace, *, queue_depth_order: bool) -> dict[str, object]:
+def _canonical_machine_order(trace: QueueHeadTrace) -> tuple[ExactQueueHead, ...]:
+    """Stable machine order, deliberately independent of human presentation flags."""
+
+    competitors = sorted(trace.competitor_heads, key=lambda queue: queue.frontier_value)
+    return (*competitors, trace.winner_head)
+
+
+def _payload(trace: QueueHeadTrace) -> dict[str, object]:
     decision = trace.decision
-    ordered = ordered_queue_frontiers(trace, queue_depth_order=queue_depth_order)
     return {
         "type": "ew-decision-queue-frontier-trace",
         "view": "queue-frontiers",
-        "ordering": (
-            "queue-depth-desc,display-value-asc,winner-last"
-            if queue_depth_order
-            else "display-value-asc,winner-last"
-        ),
+        "ordering": "display-value-asc,winner-last",
         "n": decision.n,
         "state": {
             "two_back": {"n": decision.n - 2, "value": decision.two_back},
@@ -186,7 +239,7 @@ def _payload(trace: QueueHeadTrace, *, queue_depth_order: bool) -> dict[str, obj
         },
         "legal_carriers": sorted(decision.legal_carriers),
         "least_unused": decision.least_unused,
-        "queues": [_queue_payload(queue) for queue in ordered],
+        "queues": [_queue_payload(queue) for queue in _canonical_machine_order(trace)],
         "exhaustive_threats": [
             {"value": threat.value, "support": sorted(threat.support), "used_at": threat.used_at}
             for threat in decision.threats
@@ -194,9 +247,9 @@ def _payload(trace: QueueHeadTrace, *, queue_depth_order: bool) -> dict[str, obj
     }
 
 
-def _flat_rows(trace: QueueHeadTrace, *, queue_depth_order: bool) -> list[dict[str, object]]:
+def _flat_rows(trace: QueueHeadTrace) -> list[dict[str, object]]:
     rows: list[dict[str, object]] = []
-    for queue in ordered_queue_frontiers(trace, queue_depth_order=queue_depth_order):
+    for queue in _canonical_machine_order(trace):
         rows.append(
             {
                 "n": trace.decision.n,
@@ -234,38 +287,34 @@ def _render_text(
     diagnostics: bool,
     max_width: int,
     candidates_per_table: int,
-    queue_depth_order: bool,
+    sort_order: str,
 ) -> str:
     decision = trace.decision
     tables = _tables(
         trace,
         max_width=max_width,
         candidates_per_table=candidates_per_table,
-        queue_depth_order=queue_depth_order,
+        sort_order=sort_order,
     )
     lines = [
         f"EW step {decision.n}: choose a_{decision.n} = {decision.winner}",
         f"least unused = {decision.least_unused}; legal carry primes = {_human_primes(decision.legal_carriers)}",
-        (
-            "queue-frontier mode: losing queues sorted by descending depth, then ascending displayed value; W stays last"
-            if queue_depth_order
-            else "queue-frontier mode: one row per represented exact-support queue"
-        ),
+        f"queue-frontier mode: one row per represented exact-support queue; human sort={sort_order}",
         "",
     ]
 
     for index, (start, end, table) in enumerate(tables, start=1):
         if len(tables) > 1:
-            lines.append(f"queue rows {start}–{end} ({index}/{len(tables)})")
+            lines.append(f"losing queue rows {start}–{end} ({index}/{len(tables)})")
         lines.append(render_incidence_text(table, max_width=0))
         lines.append("")
 
     if len(tables) > 1:
-        lines.append("Each table repeats B and A; prime columns are local to the queues shown.")
+        lines.append("Each table repeats B, A, and W; prime columns are local to the losing queues shown.")
     lines.extend(
         (
             "depth = number of values already serviced in that exact-support queue before this step",
-            "role: B=two-back, A=previous, L=max previously used value in a losing queue, W=winner",
+            "role: B=two-back, A=previous, W=winner, L=max previously used value in a losing queue",
             f"L/W cells: bare exponent = shared with a_{decision.n - 1}; +exponent = newly introduced prime",
             "B/A cells: ordinary prime exponents; blank cell = prime absent",
             "",
@@ -277,7 +326,7 @@ def _render_text(
     )
     if diagnostics:
         lines.extend(("", "Queue race details"))
-        for queue in ordered_queue_frontiers(trace, queue_depth_order=queue_depth_order):
+        for queue in _canonical_machine_order(trace):
             if queue.is_winner:
                 lines.append(
                     f"  W support={{{_primes(queue.support)}}}: head={queue.value}, depth={queue.depth}"
@@ -291,18 +340,25 @@ def _render_text(
     return "\n".join(lines) + "\n"
 
 
-def _render_markdown(trace: QueueHeadTrace, *, queue_depth_order: bool) -> str:
+def _render_markdown(trace: QueueHeadTrace, *, sort_order: str) -> str:
     lines = [
         f"## EW step {trace.decision.n}: queue-frontier view",
+        "",
+        f"Human sort: `{sort_order}`. The context rows `B`, `A`, and `W` are fixed above the losing queues.",
         "",
         "| kind | displayed value | depth | current head | support | collapsed threats |",
         "| --- | ---: | ---: | ---: | --- | --- |",
     ]
-    for queue in ordered_queue_frontiers(trace, queue_depth_order=queue_depth_order):
+    winner = trace.winner_head
+    lines.append(
+        f"| winner | {trace.decision.winner} | {winner.depth} | {winner.value} | "
+        f"`{_primes(winner.support)}` | {', '.join(str(v) for v in winner.source_threats) or '—'} |"
+    )
+    for queue in ordered_queue_frontiers(trace, sort_order=sort_order):
         collapsed = ", ".join(str(value) for value in queue.source_threats) or "—"
         lines.append(
-            f"| {'winner' if queue.is_winner else 'loser'} | {queue.frontier_value} | "
-            f"{queue.depth} | {queue.value} | `{_primes(queue.support)}` | {collapsed} |"
+            f"| loser | {queue.frontier_value} | {queue.depth} | {queue.value} | "
+            f"`{_primes(queue.support)}` | {collapsed} |"
         )
     return "\n".join(lines) + "\n"
 
@@ -314,9 +370,13 @@ def render_queue_frontier_trace(
     diagnostics: bool = False,
     max_width: int = 160,
     candidates_per_table: int = 0,
-    queue_depth_order: bool = False,
+    sort_order: str = "value",
 ) -> str:
-    """Render one representative row per exact queue using its serviced frontier."""
+    """Render one representative row per exact queue using its serviced frontier.
+
+    Human sort options affect only text/Markdown. JSON/TSV/CSV use a stable
+    canonical order and preserve the complete queue/frontier/threat data.
+    """
 
     format_ = OutputFormat(output_format)
     if format_ is OutputFormat.TEXT:
@@ -325,17 +385,13 @@ def render_queue_frontier_trace(
             diagnostics=diagnostics,
             max_width=max_width,
             candidates_per_table=candidates_per_table,
-            queue_depth_order=queue_depth_order,
+            sort_order=sort_order,
         )
     if format_ is OutputFormat.MARKDOWN:
-        return _render_markdown(trace, queue_depth_order=queue_depth_order)
+        return _render_markdown(trace, sort_order=sort_order)
     if format_ is OutputFormat.JSON:
-        return json.dumps(
-            _payload(trace, queue_depth_order=queue_depth_order),
-            indent=2,
-            sort_keys=False,
-        ) + "\n"
-    rows = _flat_rows(trace, queue_depth_order=queue_depth_order)
+        return json.dumps(_payload(trace), indent=2, sort_keys=False) + "\n"
+    rows = _flat_rows(trace)
     if format_ is OutputFormat.TSV:
         return _render_delimited(rows, "\t")
     return _render_delimited(rows, ",")
