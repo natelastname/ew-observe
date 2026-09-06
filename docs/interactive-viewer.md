@@ -35,6 +35,29 @@ width, so the number of mini-tables adjusts automatically. Horizontal scrolling
 remains available as a fallback when even one self-contained table is
 intrinsically wider than the terminal.
 
+## Semantic color
+
+Color is deliberately viewer-only. The underlying static text renderers keep
+their explicit signs, and machine-readable formats are unchanged.
+
+Inside incidence rows:
+
+- an introduced-prime cell that the static renderer writes as `+e` is displayed
+  as a **green** `e` with the sign visually removed;
+- a negative/dropped marker written as `-e`, when present, is displayed as a
+  **red** `e`;
+- a bare exponent remains uncolored and means retained/shared prime incidence.
+
+The removed sign is replaced by one blank character before coloring, so table
+column widths and horizontal-scroll coordinates remain unchanged. Styling is
+applied to the complete logical line before viewport cropping, so the color is
+preserved even when horizontal scrolling hides the original sign position.
+
+Row roles also receive restrained colors: `W` is highlighted as the winner,
+`B/A` share a continuity-context color family, and losing/threat/head rows use a
+secondary accent. These colors are only reading aids; they encode no additional
+mathematics.
+
 ## Keys
 
 ### Navigation
