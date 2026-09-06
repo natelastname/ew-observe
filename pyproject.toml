@@ -5,7 +5,7 @@ build-backend = "uv_build"
 [project]
 name = "ew-observe"
 version = "0.1.0"
-description = "A python module"
+description = "Instrumented research tooling for the Enots--Wolley greedy sequence"
 readme = "README.md"
 requires-python = ">=3.12,<3.14.1"
 authors = [
@@ -13,7 +13,7 @@ authors = [
 ]
 dependencies = [
     "cyclopts>=4.24.0",
-    "lex-earliest-seqs",
+    "lex-earliest-seqs @ git+https://github.com/natelastname/lex-earliest-seqs.git@master",
     "primecountpy>=0.2.1",
 ]
 
@@ -54,6 +54,3 @@ lint.select = [
 ]
 fix = true
 src = ["src", "tests"]
-
-[tool.uv.sources]
-lex-earliest-seqs = { git = "https://github.com/natelastname/lex-earliest-seqs" }
