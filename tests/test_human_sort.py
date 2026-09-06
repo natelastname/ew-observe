@@ -1,4 +1,5 @@
 from ew_observe import EWObserver
+from ew_observe.human_sort import prime_lex_key
 from ew_observe.queue_frontier_presentation import ordered_queue_frontiers
 
 
@@ -21,6 +22,16 @@ def _values(sort_order: str) -> list[int]:
     ]
 
 
+def test_prime_lex_treats_small_primes_as_least_significant_digits():
+    assert prime_lex_key(12) == ((3, 1), (2, 2))
+    assert prime_lex_key(18) == ((3, 2), (2, 1))
+    assert prime_lex_key(20) == ((5, 1), (2, 2))
+    assert prime_lex_key(30) == ((5, 1), (3, 1), (2, 1))
+
+    assert prime_lex_key(12) < prime_lex_key(18) < prime_lex_key(20)
+    assert prime_lex_key(20) < prime_lex_key(30)
+
+
 def test_value_sort_is_numerical():
     assert _values("value") == [
         46, 52, 57, 58, 60, 62, 69, 70, 74, 78, 82, 84, 100, 112,
@@ -35,10 +46,10 @@ def test_depth_sort_is_maturity_first():
     ]
 
 
-def test_prime_lex_sorts_the_prime_factor_word():
+def test_prime_lex_uses_highest_differing_prime_exponent_first():
     assert _values("prime-lex") == [
-        112, 152, 60, 84, 100, 52, 78, 70, 46, 58, 62, 74, 82, 135,
-        117, 147, 57, 69,
+        60, 135, 100, 112, 84, 70, 147, 52, 78, 117, 152, 57, 46,
+        69, 58, 62, 74, 82,
     ]
 
 
