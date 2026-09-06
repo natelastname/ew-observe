@@ -6,10 +6,11 @@ from cyclopts import App
 
 from .candidate_presentation import render_candidate_audit
 from .decision import prime_support
+from .decision_presentation import render_decision_trace
 from .exhaustive_human_presentation import render_exhaustive_human_trace
 from .lifecycle_presentation import render_candidate_lifecycle
 from .observer import EWObserver
-from .presentation import OutputFormat, render_decision_trace
+from .presentation import OutputFormat
 from .queue_frontier_markdown import render_queue_frontier_markdown
 from .queue_frontier_presentation import HUMAN_SORT_ORDERS, render_queue_frontier_trace
 from .queue_head_human_presentation import render_queue_head_human_trace
