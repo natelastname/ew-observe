@@ -23,6 +23,18 @@ Consequently, changing a viewer option cannot change, thin, reorder, or
 otherwise degrade JSON/TSV/CSV output. The machine-readable commands remain
 independent of the viewer.
 
+## Layout
+
+The viewer uses the current terminal width as the same soft table-width target
+used by the ordinary human-readable `step` command. Long decisions are therefore
+split into multiple self-contained incidence tables instead of being forced into
+one giant row. Every mini-table repeats the fixed `B`, `A`, and `W` context.
+
+When the terminal is resized, the viewer re-renders the document using the new
+width, so the number of mini-tables adjusts automatically. Horizontal scrolling
+remains available as a fallback when even one self-contained table is
+intrinsically wider than the terminal.
+
 ## Keys
 
 ### Navigation
@@ -78,8 +90,9 @@ The first experiment uses Rich directly for alternate-screen redraws and plain
 POSIX cbreak input for single-key commands. It intentionally does not introduce
 a TUI framework, widgets, mouse controls, saved preferences, or persistence.
 Rendered documents are cached by `(step, representation, collapse, sort,
-diagnostics)`, so ordinary scrolling only crops the cached text and does not
-rerun the formatter.
+diagnostics, terminal width)`, so ordinary scrolling only crops the cached text
+and does not rerun the formatter. A resize naturally selects a different cached
+layout because the width changes.
 
 The raw-terminal imports are isolated to `run_viewer`; importing or using the
 ordinary CLI does not require POSIX terminal modules. The interactive `view`
