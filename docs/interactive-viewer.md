@@ -59,10 +59,15 @@ intrinsically wider than the terminal.
 | `c` | collapse / expand exact queues |
 | `f` | serviced frontier / current-head representation |
 | `v` | sort by numerical value |
-| `x` | sort by prime-factor lexicographic order |
+| `x` | sort by corrected prime-exponent lex order |
 | `d` | sort by queue depth |
 | `r` | sort by retained continuity prime |
 | `i` | toggle diagnostics/details |
+
+The `x` ordering treats `(v_2,v_3,v_5,...)` as prime digits with `v_2` least
+significant: the largest prime where two exponent vectors differ decides the
+comparison. For example `12=2^2*3` sorts before `18=2*3^2`, and both sort before
+`20=2^2*5`.
 
 ### Other
 
