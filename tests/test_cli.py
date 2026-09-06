@@ -24,10 +24,11 @@ def test_step_renders_prime_incidence_queue_frontiers(monkeypatch, capsys):
 
     output = capsys.readouterr().out
     assert "EW step 11: choose a_11 = 18" in output
+    assert "fresh-prime ceiling Q = 13" in output
     assert "role object depth" in output
     assert "L=max previously used value in a losing queue" in output
     assert "+exponent = newly introduced prime" in output
-    assert "Compressed 3 already-used threats into 2 represented exact-support queues." in output
+    assert "Compressed 3 reduced already-used threats into 2 represented exact-support queues." in output
     assert "Queue race details" not in output
 
 
@@ -51,6 +52,7 @@ def test_expanded_human_tables_also_repeat_B_A_and_W(monkeypatch, capsys):
     cli_module.step(11, queue_depth=False, max_width=0, candidates_per_table=1)
     output = capsys.readouterr().out
 
+    assert "expanded reduced-threat view; Q_11=13" in output
     assert "threat rows 1–1 (1/3)" in output
     assert "threat rows 3–3 (3/3)" in output
     assert output.count("role object occurrence") == 3
@@ -66,11 +68,12 @@ def test_step_can_show_queue_diagnostics(monkeypatch, capsys):
 
     output = capsys.readouterr().out
     assert "Queue race details" in output
+    assert "fresh-prime ceiling Q_11=13" in output
     assert "last-used=14" in output
     assert "current-head=28" in output
 
 
-def test_step_json_is_machine_readable_and_canonical(monkeypatch, capsys):
+def test_step_json_is_machine_readable_canonical_and_frontier_explicit(monkeypatch, capsys):
     _patch_terms(monkeypatch)
 
     cli_module.step(23, format="json", sort="depth", queue_depth=False)
@@ -79,6 +82,8 @@ def test_step_json_is_machine_readable_and_canonical(monkeypatch, capsys):
     assert payload["n"] == 23
     assert payload["type"] == "ew-decision-queue-frontier-trace"
     assert payload["ordering"] == "display-value-asc,winner-last"
+    assert payload["candidate_universe"]["kind"] == "fresh-prime-reduced"
+    assert payload["candidate_universe"]["prime_ceiling"] == payload["least_unintroduced_prime"]
     assert [row["display_value"] for row in payload["queues"]] == [20, 22, 26, 28, 38]
     assert payload["queues"][-1]["kind"] == "winner"
 
@@ -103,13 +108,19 @@ def test_step_queue_heads_machine_view_remains_available(monkeypatch, capsys):
     assert [row["value"] for row in payload["queue_heads"]] == [28, 18]
 
 
-def test_candidate_json_is_machine_readable(monkeypatch, capsys):
+def test_candidate_json_exposes_primitive_and_reduced_status(monkeypatch, capsys):
     _patch_terms(monkeypatch)
 
-    cli_module.candidate(11, 14, format="json")
+    cli_module.candidate(11, 34, format="json")
 
     payload = json.loads(capsys.readouterr().out)
     assert payload["type"] == "ew-candidate-audit"
-    assert payload["value"] == 14
+    assert payload["value"] == 34
     assert payload["retained_primes"] == [2]
-    assert payload["introduced_primes"] == [7]
+    assert payload["introduced_primes"] == [17]
+    assert payload["least_unintroduced_prime"] == 13
+    assert payload["primitive_globally_admissible"]
+    assert not payload["in_reduced_candidate_universe"]
+    assert not payload["reduced_globally_admissible"]
+    assert payload["primes_beyond_fresh_frontier"] == [17]
+    assert payload["reduction_reasons"] == ["prime-beyond-least-unintroduced"]
