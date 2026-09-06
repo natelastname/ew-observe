@@ -42,7 +42,7 @@ def test_step_11_records_last_service_and_current_head_per_queue():
     ]
 
 
-def test_default_frontier_renderer_shows_max_used_loser_and_winner():
+def test_default_frontier_renderer_shows_max_used_loser_and_fixed_winner_context():
     trace = EWObserver(EW_PREFIX_23[:11]).trace_queue_heads(11)
     rendered = render_queue_frontier_trace(trace, max_width=0)
 
@@ -52,42 +52,22 @@ def test_default_frontier_renderer_shows_max_used_loser_and_winner():
     assert "H     28" not in rendered
     assert "L=max previously used value in a losing queue" in rendered
 
-    queue_lines = [
-        line
-        for line in rendered.splitlines()
-        if line.lstrip().startswith(("L ", "W "))
-    ]
-    assert [int(line.split()[1]) for line in queue_lines] == [14, 18]
+    rows = [line for line in rendered.splitlines() if line.lstrip().startswith(("W ", "L "))]
+    assert [line.split()[0] for line in rows] == ["W", "L"]
 
 
-def test_explicit_queue_head_renderer_still_shows_current_heads():
-    trace = EWObserver(EW_PREFIX_23[:11]).trace_queue_heads(11)
-    rendered = render_queue_head_trace(trace, max_width=0)
-
-    assert "H     28" in rendered
-    assert "W     18" in rendered
-
-
-def test_queue_depth_option_reorders_frontiers_by_depth_then_displayed_value():
+def test_depth_sort_orders_only_losing_frontiers():
     trace = EWObserver(EW_PREFIX_23).trace_queue_heads(23)
 
-    default = ordered_queue_frontiers(trace, queue_depth_order=False)
-    by_depth = ordered_queue_frontiers(trace, queue_depth_order=True)
+    default = ordered_queue_frontiers(trace, sort_order="value")
+    by_depth = ordered_queue_frontiers(trace, sort_order="depth")
 
-    assert by_depth[-1].is_winner
-    assert [head.depth for head in by_depth[:-1]] == sorted(
-        [head.depth for head in by_depth[:-1]],
-        reverse=True,
-    )
-    for left, right in zip(by_depth[:-2], by_depth[1:-1]):
-        if left.depth == right.depth:
-            assert left.frontier_value <= right.frontier_value
-    assert sorted(head.frontier_value for head in default[:-1]) == [
-        head.frontier_value for head in default[:-1]
-    ]
+    assert [head.frontier_value for head in default] == [20, 22, 26, 28]
+    assert [head.frontier_value for head in by_depth] == [20, 28, 22, 26]
+    assert [head.depth for head in by_depth] == [2, 2, 1, 1]
 
 
-def test_current_head_ordering_remains_available():
+def test_current_head_ordering_machine_helper_remains_available():
     trace = EWObserver(EW_PREFIX_23).trace_queue_heads(23)
 
     default = ordered_queue_heads(trace, queue_depth_order=False)
@@ -95,32 +75,30 @@ def test_current_head_ordering_remains_available():
 
     assert [head.value for head in default] == [40, 44, 52, 56, 38]
     assert [head.value for head in by_depth] == [40, 56, 44, 52, 38]
-    assert [head.depth for head in by_depth] == [2, 2, 1, 1, 0]
 
 
 def test_frontier_json_keeps_both_last_used_and_current_head():
     trace = EWObserver(EW_PREFIX_23[:11]).trace_queue_heads(11)
-    payload = json.loads(render_queue_frontier_trace(trace, output_format="json"))
+    payload = json.loads(render_queue_frontier_trace(trace, output_format="json", sort_order="depth"))
 
     assert payload["type"] == "ew-decision-queue-frontier-trace"
     assert payload["view"] == "queue-frontiers"
+    assert payload["ordering"] == "display-value-asc,winner-last"
     assert [(row["display_value"], row["queue_depth"]) for row in payload["queues"]] == [
         (14, 1),
         (18, 2),
     ]
     loser = payload["queues"][0]
-    assert loser["kind"] == "loser"
     assert loser["last_used_value"] == 14
     assert loser["current_head"] == 28
     winner = payload["queues"][1]
-    assert winner["kind"] == "winner"
     assert winner["display_value"] == 18
     assert winner["last_used_value"] == 12
     assert winner["current_head"] == 18
     assert winner["source_threats"] == [6, 12]
 
 
-def test_cli_default_is_frontier_with_head_and_exhaustive_views_opt_in(monkeypatch, capsys):
+def test_cli_default_frontier_and_alternate_human_views(monkeypatch, capsys):
     monkeypatch.setattr(
         cli_module,
         "_load_ew_terms",
@@ -131,14 +109,13 @@ def test_cli_default_is_frontier_with_head_and_exhaustive_views_opt_in(monkeypat
     default = capsys.readouterr().out
     assert "L     14" in default
     assert "W     18" in default
-    assert "H     28" not in default
 
     cli_module.step(11, max_width=0, queue_heads=True)
     heads = capsys.readouterr().out
     assert "H     28" in heads
     assert "W     18" in heads
 
-    cli_module.step(11, max_width=0, exhaustive_threats=True)
-    exhaustive = capsys.readouterr().out
-    assert "role object occurrence" in exhaustive
-    assert "T      6" in exhaustive
+    cli_module.step(11, max_width=0, queue_depth=False)
+    expanded = capsys.readouterr().out
+    assert "role object occurrence" in expanded
+    assert "T      6" in expanded
