@@ -5,10 +5,11 @@ import sys
 from cyclopts import App
 
 from .decision import prime_support
+from .exhaustive_human_presentation import render_exhaustive_human_trace
 from .lifecycle_presentation import render_candidate_lifecycle
 from .observer import EWObserver
 from .presentation import OutputFormat, render_candidate_audit, render_decision_trace
-from .queue_frontier_presentation import render_queue_frontier_trace
+from .queue_frontier_presentation import HUMAN_SORT_ORDERS, render_queue_frontier_trace
 from .queue_head_presentation import render_queue_head_trace
 
 app = App()
@@ -56,6 +57,10 @@ def _load_until_prime_debut(
         count = min(search_limit, max(count * 2, count + 1024))
 
 
+def _is_human(format_: OutputFormat) -> bool:
+    return format_ in {OutputFormat.TEXT, OutputFormat.MARKDOWN}
+
+
 @app.command
 def step(
     n: int,
@@ -64,65 +69,101 @@ def step(
     diagnostics: bool = False,
     max_width: int = 160,
     candidates_per_table: int = 0,
-    queue_depth: bool = False,
+    queue_depth: bool = True,
+    sort: str = "value",
     queue_heads: bool = False,
     exhaustive_threats: bool = False,
 ) -> None:
     """Explain the exact greedy choice of ``a_n``.
 
-    The default view has one row per represented exact-support queue. Losing
-    queues display their maximal previously used member; the winning queue
-    displays the actual winner. ``depth`` is the number of prior services of
-    that queue before the step. By default losing queues are ordered by their
-    displayed value; ``--queue-depth`` orders them by descending depth, then
-    ascending displayed value. The winner always remains last.
+    Human output has independent presentation axes:
 
-    ``--queue-heads`` instead displays each represented queue's current first
-    unused head. ``--exhaustive-threats`` restores the original uncompressed
-    historical threat ledger. These two alternative views are mutually
-    exclusive.
+    - ``--queue-depth`` / ``--no-queue-depth`` controls whether rows collapse
+      to one representative per exact-support queue. It is enabled by default.
+    - ``--sort`` controls row order independently of queue collapse. Available
+      human sorts are: value, prime-lex, depth, retained.
+    - every human mini-table repeats B, A, and W as fixed context rows.
 
-    ``--max-width`` is a soft width bound for grouping rows into self-contained
-    incidence tables that each repeat the incoming B,A state; use ``0`` for one
-    unlimited table. ``--candidates-per-table`` adds an explicit row cap.
+    ``--queue-heads`` is an alternate collapsed human view that displays each
+    queue's current first-unused head instead of its last serviced frontier.
+    ``--exhaustive-threats`` is retained as an explicit alias for the expanded
+    historical ledger.
 
+    Human presentation flags do not alter JSON/TSV/CSV ordering or data. The
+    default structured output remains the rich queue-frontier representation,
+    which also contains current heads and the exhaustive source threats.
+
+    ``--max-width`` is a soft width bound for self-contained incidence tables;
+    use 0 for one unlimited table. ``--candidates-per-table`` adds a row cap.
     Formats: text (default), markdown, json, tsv, csv.
     """
 
+    if sort not in HUMAN_SORT_ORDERS:
+        raise ValueError(
+            f"--sort must be one of {', '.join(HUMAN_SORT_ORDERS)}"
+        )
     if queue_heads and exhaustive_threats:
         raise ValueError("use either --queue-heads or --exhaustive-threats, not both")
-    if exhaustive_threats and queue_depth:
-        raise ValueError("--queue-depth applies to the one-row-per-queue views")
 
     observer = EWObserver(_load_ew_terms(n))
     format_ = OutputFormat(format)
-    if exhaustive_threats:
-        rendered = render_decision_trace(
-            observer.trace_step(n),
-            output_format=format_,
-            diagnostics=diagnostics,
-            max_width=max_width,
-            candidates_per_table=candidates_per_table,
-        )
-    else:
-        trace = observer.trace_queue_heads(n)
-        if queue_heads:
-            rendered = render_queue_head_trace(
-                trace,
+    human = _is_human(format_)
+
+    if human:
+        if exhaustive_threats or not queue_depth:
+            rendered = render_exhaustive_human_trace(
+                observer.trace_step(n),
                 output_format=format_,
                 diagnostics=diagnostics,
                 max_width=max_width,
                 candidates_per_table=candidates_per_table,
-                queue_depth_order=queue_depth,
+                sort_order=sort,
+            )
+        elif queue_heads:
+            rendered = render_queue_head_trace(
+                observer.trace_queue_heads(n),
+                output_format=format_,
+                diagnostics=diagnostics,
+                max_width=max_width,
+                candidates_per_table=candidates_per_table,
+                queue_depth_order=False,
             )
         else:
             rendered = render_queue_frontier_trace(
-                trace,
+                observer.trace_queue_heads(n),
                 output_format=format_,
                 diagnostics=diagnostics,
                 max_width=max_width,
                 candidates_per_table=candidates_per_table,
-                queue_depth_order=queue_depth,
+                sort_order=sort,
+            )
+    else:
+        # Human-only flags deliberately cannot weaken or reorder machine data.
+        if exhaustive_threats:
+            rendered = render_decision_trace(
+                observer.trace_step(n),
+                output_format=format_,
+                diagnostics=diagnostics,
+                max_width=max_width,
+                candidates_per_table=candidates_per_table,
+            )
+        elif queue_heads:
+            rendered = render_queue_head_trace(
+                observer.trace_queue_heads(n),
+                output_format=format_,
+                diagnostics=diagnostics,
+                max_width=max_width,
+                candidates_per_table=candidates_per_table,
+                queue_depth_order=False,
+            )
+        else:
+            rendered = render_queue_frontier_trace(
+                observer.trace_queue_heads(n),
+                output_format=format_,
+                diagnostics=diagnostics,
+                max_width=max_width,
+                candidates_per_table=candidates_per_table,
+                sort_order="value",
             )
     sys.stdout.write(rendered)
 
