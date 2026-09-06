@@ -62,12 +62,30 @@ def test_text_trace_is_sparse_prime_incidence_table():
     assert table.rows[5].coordinates == ((2, "1"), (3, "+2"))
 
 
-def test_text_trace_panels_prime_columns_when_width_is_small():
+def test_text_trace_splits_candidate_rows_by_explicit_count():
+    trace = EWObserver(EW_PREFIX).trace_step(11)
+    rendered = render_decision_trace(
+        trace,
+        max_width=0,
+        candidates_per_table=2,
+    )
+
+    assert "candidate rows 1–2 (1/2)" in rendered
+    assert "candidate rows 3–4 (2/2)" in rendered
+    assert rendered.count("role object occurrence") == 2
+    assert rendered.count("a_9") == 2
+    assert rendered.count("a_10") == 2
+    assert "prime columns" not in rendered
+
+
+def test_text_trace_splits_candidate_rows_to_respect_width():
     trace = EWObserver(EW_PREFIX).trace_step(11)
     rendered = render_decision_trace(trace, max_width=32)
 
-    assert "prime columns" in rendered
-    assert "(1/" in rendered
+    assert "candidate rows" in rendered
+    assert rendered.count("role object occurrence") > 1
+    assert "Each table repeats B and A" in rendered
+    assert "prime columns" not in rendered
 
 
 def test_markdown_is_retained_as_explicit_export():
