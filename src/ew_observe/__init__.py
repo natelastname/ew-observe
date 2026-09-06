@@ -7,8 +7,8 @@ from .decision import (
     GreedyTraceError,
     RejectionReason,
     render_candidate_audit,
-    render_decision_trace,
 )
+from .presentation import render_decision_trace
 
 __all__ = [
     "CandidateAudit",
