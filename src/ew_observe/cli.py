@@ -4,11 +4,12 @@ import sys
 
 from cyclopts import App
 
+from .candidate_presentation import render_candidate_audit
 from .decision import prime_support
 from .exhaustive_human_presentation import render_exhaustive_human_trace
 from .lifecycle_presentation import render_candidate_lifecycle
 from .observer import EWObserver
-from .presentation import OutputFormat, render_candidate_audit, render_decision_trace
+from .presentation import OutputFormat, render_decision_trace
 from .queue_frontier_markdown import render_queue_frontier_markdown
 from .queue_frontier_presentation import HUMAN_SORT_ORDERS, render_queue_frontier_trace
 from .queue_head_human_presentation import render_queue_head_human_trace
@@ -92,9 +93,13 @@ def step(
     ``--exhaustive-threats`` is retained as an explicit alias for the expanded
     historical ledger.
 
+    All race views use the safe fresh-prime reduction: if Q_n is the least
+    globally unintroduced prime before a_n, candidates containing primes above
+    Q_n are discarded. Primitive candidate audits remain available separately.
+
     Human presentation flags do not alter JSON/TSV/CSV ordering or data. The
     default structured output remains the rich queue-frontier representation,
-    which also contains current heads and the exhaustive source threats.
+    which also contains current heads and the reduced source threats.
 
     ``--max-width`` is a soft width bound for self-contained incidence tables;
     use 0 for one unlimited table. ``--candidates-per-table`` adds a row cap.
@@ -149,7 +154,6 @@ def step(
                     sort_order=sort,
                 )
     else:
-        # Human-only flags deliberately cannot weaken or reorder machine data.
         if exhaustive_threats:
             rendered = render_decision_trace(
                 observer.trace_step(n),
@@ -192,7 +196,7 @@ def view(n: int) -> None:
 
 @app.command
 def candidate(n: int, value: int, *, format: str = "text") -> None:
-    """Audit one positive integer against the EW state before ``a_n``.
+    """Audit primitive and reduced status of one integer before ``a_n``.
 
     Formats: text (default), markdown, json, tsv, csv.
     """
@@ -220,7 +224,8 @@ def track(
 
     Supply either ``--stop N`` or ``--until-prime-debut Q``. If ``--start`` is
     omitted, the command shows the final ``--context`` steps ending at the
-    resolved stop. Formats: text (default), markdown, json, tsv, csv.
+    resolved stop. Live status and rank are computed in the fresh-prime-reduced
+    candidate universe. Formats: text (default), markdown, json, tsv, csv.
 
     Example: ``ew-observe track 734 --start 745 --until-prime-debut 367``.
     """
