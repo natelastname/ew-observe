@@ -1,7 +1,7 @@
 """Small sparse incidence-table primitives for ew-observe.
 
 The project deliberately owns this tiny renderer instead of depending on the
-lex-earliest-seqs presentation layer.  It is intended for prime-coordinate
+lex-earliest-seqs presentation layer. It is intended for prime-coordinate
 microscope views and later event chronologies.
 """
 
@@ -100,8 +100,12 @@ def _feature_panels(
     return tuple(panels)
 
 
-def render_text(table: IncidenceTable, *, max_width: int = 120) -> str:
-    """Render a compact aligned sparse table, splitting feature columns if needed."""
+def render_text(table: IncidenceTable, *, max_width: int = 0) -> str:
+    """Render a compact aligned sparse table.
+
+    The default ``max_width=0`` means unlimited width and preserves all feature
+    columns in one table. A positive width explicitly enables feature paneling.
+    """
 
     panels = _feature_panels(table, max_width=max_width)
     rendered: list[str] = []
