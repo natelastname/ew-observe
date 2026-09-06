@@ -8,7 +8,7 @@ from .decision import prime_support
 from .lifecycle_presentation import render_candidate_lifecycle
 from .observer import EWObserver
 from .presentation import OutputFormat, render_candidate_audit, render_decision_trace
-from .queue_depth_presentation import render_queue_depth_decision_trace
+from .queue_head_presentation import render_queue_head_trace
 
 app = App()
 
@@ -64,39 +64,45 @@ def step(
     max_width: int = 160,
     candidates_per_table: int = 0,
     queue_depth: bool = False,
+    exhaustive_threats: bool = False,
 ) -> None:
-    """Explain the exact greedy choice of ``a_n`` using the threat ledger.
+    """Explain the exact greedy choice of ``a_n``.
 
-    Formats: text (default), markdown, json, tsv, csv. Text output is split into
-    self-contained prime-incidence tables that each repeat the previous two EW
-    terms. ``--max-width`` is a soft width bound for automatic candidate
-    grouping; use ``0`` for one unlimited table. ``--candidates-per-table``
-    optionally sets an explicit candidate-row cap.
+    The default view deduplicates the exhaustive historical threat ledger by
+    exact prime support and shows only each represented queue's current first
+    unused head. The table includes the actual zero-based queue depth. By
+    default nonwinning heads are ordered by numerical head value; pass
+    ``--queue-depth`` to sort them by descending depth, then ascending value.
+    The winner always remains last.
 
-    ``--queue-depth`` replaces occurrence indices with zero-based exact-support
-    queue depth and sorts paid threats by descending depth, breaking ties by
-    ascending numerical value. The winner remains last. Structured formats
-    expose the same queue depths and ordering explicitly.
+    ``--exhaustive-threats`` restores the uncompressed historical threat ledger.
+    ``--max-width`` is a soft width bound for grouping rows into self-contained
+    incidence tables that each repeat the incoming B,A state; use ``0`` for one
+    unlimited table. ``--candidates-per-table`` adds an explicit row cap.
+
+    Formats: text (default), markdown, json, tsv, csv.
     """
 
     observer = EWObserver(_load_ew_terms(n))
-    trace = observer.trace_step(n)
     format_ = OutputFormat(format)
-    if queue_depth:
-        rendered = render_queue_depth_decision_trace(
-            trace,
+    if exhaustive_threats:
+        if queue_depth:
+            raise ValueError("--queue-depth applies to the default queue-head view")
+        rendered = render_decision_trace(
+            observer.trace_step(n),
             output_format=format_,
             diagnostics=diagnostics,
             max_width=max_width,
             candidates_per_table=candidates_per_table,
         )
     else:
-        rendered = render_decision_trace(
-            trace,
+        rendered = render_queue_head_trace(
+            observer.trace_queue_heads(n),
             output_format=format_,
             diagnostics=diagnostics,
             max_width=max_width,
             candidates_per_table=candidates_per_table,
+            queue_depth_order=queue_depth,
         )
     sys.stdout.write(rendered)
 
