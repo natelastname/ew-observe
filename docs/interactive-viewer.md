@@ -23,6 +23,14 @@ Consequently, changing a viewer option cannot change, thin, reorder, or
 otherwise degrade JSON/TSV/CSV output. The machine-readable commands remain
 independent of the viewer.
 
+The canonical trace itself uses the safe **fresh-prime frontier reduction**. If
+`Q_n` is the least globally unintroduced prime before `a_n`, candidates whose
+prime support contains any prime greater than `Q_n` are discarded from the race.
+The viewer therefore never displays such a candidate as a threat, queue
+competitor, or live candidate. Every viewer representation prints the current
+`Q_n` in its header. Primitive candidate admissibility remains separately
+auditable through the `candidate` command; see `fresh-prime-frontier.md`.
+
 ## Layout
 
 The viewer uses the current terminal width as the same soft table-width target
@@ -110,7 +118,8 @@ The viewer starts with:
 - diagnostics hidden.
 
 Every representation is rendered with the same `B`, `A`, `W` context used by
-the ordinary human-readable `step` command.
+the ordinary human-readable `step` command and shows the current fresh-prime
+ceiling `Q_n`.
 
 ## Implementation notes
 
