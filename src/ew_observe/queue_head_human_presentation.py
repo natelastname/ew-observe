@@ -5,38 +5,11 @@ from __future__ import annotations
 from collections.abc import Sequence
 
 from .decision import Support
+from .human_sort import prime_exponents, prime_lex_key
 from .incidence import IncidenceRow, IncidenceTable, render_text as render_incidence_text
 from .presentation import OutputFormat
 from .queue_frontier_presentation import HUMAN_SORT_ORDERS
 from .queue_heads import ExactQueueHead, QueueHeadTrace
-
-
-def _prime_exponents(value: int) -> tuple[tuple[int, int], ...]:
-    if value < 1:
-        raise ValueError("value must be positive")
-    if value == 1:
-        return ()
-    remaining = value
-    factors: list[tuple[int, int]] = []
-    divisor = 2
-    while divisor * divisor <= remaining:
-        exponent = 0
-        while remaining % divisor == 0:
-            remaining //= divisor
-            exponent += 1
-        if exponent:
-            factors.append((divisor, exponent))
-        divisor = 3 if divisor == 2 else divisor + 2
-    if remaining > 1:
-        factors.append((remaining, 1))
-    return tuple(factors)
-
-
-def _prime_factor_word(value: int) -> tuple[int, ...]:
-    word: list[int] = []
-    for prime, exponent in _prime_exponents(value):
-        word.extend([prime] * exponent)
-    return tuple(word)
 
 
 def _coords(
@@ -46,7 +19,7 @@ def _coords(
     mark_roles: bool = False,
 ) -> tuple[tuple[int, str], ...]:
     cells: list[tuple[int, str]] = []
-    for prime, exponent in _prime_exponents(value):
+    for prime, exponent in prime_exponents(value):
         label = str(exponent)
         if mark_roles and prime in introduced:
             label = "+" + label
@@ -63,7 +36,7 @@ def _ordered(trace: QueueHeadTrace, sort_order: str) -> tuple[ExactQueueHead, ..
     elif sort_order == "depth":
         queues.sort(key=lambda q: (-q.depth, q.value))
     elif sort_order == "prime-lex":
-        queues.sort(key=lambda q: (_prime_factor_word(q.value), q.value))
+        queues.sort(key=lambda q: (prime_lex_key(q.value), q.value))
     else:
         queues.sort(
             key=lambda q: (
@@ -97,7 +70,10 @@ def _table(trace: QueueHeadTrace, queues: Sequence[ExactQueueHead]) -> Incidence
 
 
 def _width(table: IncidenceTable) -> int:
-    return max((len(line) for line in render_incidence_text(table, max_width=0).splitlines()), default=0)
+    return max(
+        (len(line) for line in render_incidence_text(table, max_width=0).splitlines()),
+        default=0,
+    )
 
 
 def _groups(
@@ -107,13 +83,22 @@ def _groups(
     candidates_per_table: int,
     sort_order: str,
 ) -> tuple[tuple[ExactQueueHead, ...], ...]:
+    if max_width < 0:
+        raise ValueError("max_width must be nonnegative")
+    if candidates_per_table < 0:
+        raise ValueError("candidates_per_table must be nonnegative")
+
     queues = _ordered(trace, sort_order)
     if not queues:
         return ((),)
     groups: list[list[ExactQueueHead]] = []
     current: list[ExactQueueHead] = []
     for q in queues:
-        split_count = bool(current) and candidates_per_table > 0 and len(current) >= candidates_per_table
+        split_count = (
+            bool(current)
+            and candidates_per_table > 0
+            and len(current) >= candidates_per_table
+        )
         split_width = False
         if current and not split_count and max_width > 0:
             split_width = _width(_table(trace, [*current, q])) > max_width
@@ -162,19 +147,28 @@ def render_queue_head_human_trace(
             lines.extend(("", f"represented queues: {len(trace.heads)}"))
         return "\n".join(lines) + "\n"
     if format_ is OutputFormat.MARKDOWN:
-        lines = [f"## EW step {trace.decision.n}: current-head view", "", f"Human sort: `{sort_order}`.", ""]
+        lines = [
+            f"## EW step {trace.decision.n}: current-head view",
+            "",
+            f"Human sort: `{sort_order}`.",
+            "",
+        ]
         for i, group in enumerate(groups, start=1):
             if len(groups) > 1:
                 lines.extend((f"### Head table {i}/{len(groups)}", ""))
-            lines.extend((
-                "| role | object | depth | support |",
-                "| --- | ---: | ---: | --- |",
-                f"| B | {trace.decision.two_back} |  | `{','.join(map(str, sorted(trace.decision.two_back_support)))}` |",
-                f"| A | {trace.decision.previous} |  | `{','.join(map(str, sorted(trace.decision.previous_support)))}` |",
-                f"| W | {trace.decision.winner} | {trace.winner_head.depth} | `{','.join(map(str, sorted(trace.winner_head.support)))}` |",
-            ))
+            lines.extend(
+                (
+                    "| role | object | depth | support |",
+                    "| --- | ---: | ---: | --- |",
+                    f"| B | {trace.decision.two_back} |  | `{','.join(map(str, sorted(trace.decision.two_back_support)))}` |",
+                    f"| A | {trace.decision.previous} |  | `{','.join(map(str, sorted(trace.decision.previous_support)))}` |",
+                    f"| W | {trace.decision.winner} | {trace.winner_head.depth} | `{','.join(map(str, sorted(trace.winner_head.support)))}` |",
+                )
+            )
             for q in group:
-                lines.append(f"| H | {q.value} | {q.depth} | `{','.join(map(str, sorted(q.support)))}` |")
+                lines.append(
+                    f"| H | {q.value} | {q.depth} | `{','.join(map(str, sorted(q.support)))}` |"
+                )
             lines.append("")
         return "\n".join(lines)
     raise ValueError("queue-head human presentation accepts only text or markdown")
