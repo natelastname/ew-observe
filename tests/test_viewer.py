@@ -24,6 +24,21 @@ def test_viewer_starts_in_collapsed_frontier_value_view():
     assert "W     18" in document
 
 
+def test_viewer_uses_render_width_to_restore_multiple_mini_tables():
+    session = ViewerSession(23, _trace_loader)
+
+    narrow = session.document(render_width=24)
+    assert "losing queue rows" in narrow
+    assert narrow.count("role object depth") > 1
+    assert narrow.count("B     51") > 1
+    assert narrow.count("A     34") > 1
+    assert narrow.count("W     38") > 1
+
+    wide = session.document(render_width=10_000)
+    assert "losing queue rows" not in wide
+    assert wide.count("role object depth") == 1
+
+
 def test_viewer_keys_switch_sort_collapse_representation_and_details():
     session = ViewerSession(11, _trace_loader)
 
@@ -116,6 +131,7 @@ def test_help_is_an_in_place_pager_document():
     assert session.state.show_help
     assert "EW interactive viewer" in session.document()
     assert "collapse / expand exact queues" in session.document()
+    assert "automatically split" in session.document()
 
 
 def test_q_requests_exit():
