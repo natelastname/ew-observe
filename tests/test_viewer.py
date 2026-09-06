@@ -1,6 +1,13 @@
+from rich.console import Console
+
 import ew_observe.cli as cli_module
 from ew_observe import EWObserver
-from ew_observe.viewer import ViewerSession, ViewerState, viewport_lines
+from ew_observe.viewer import (
+    ViewerSession,
+    ViewerState,
+    colorize_viewer_line,
+    viewport_lines,
+)
 
 
 EW_PREFIX = [
@@ -37,6 +44,33 @@ def test_viewer_uses_render_width_to_restore_multiple_mini_tables():
     wide = session.document(render_width=10_000)
     assert "losing queue rows" not in wide
     assert wide.count("role object depth") == 1
+
+
+def test_viewer_colors_replace_signed_exponent_notation_without_shifting_columns():
+    console = Console(force_terminal=True, color_system="standard")
+    line = "   W     18     2 1 +2  -3"
+    colored = colorize_viewer_line(line)
+
+    assert len(colored.plain) == len(line)
+    assert "+" not in colored.plain
+    assert "-" not in colored.plain
+    assert colored.plain == "   W     18     2 1  2   3"
+
+    plus_digit = colored.plain.index("2", colored.plain.index("1") + 1)
+    minus_digit = colored.plain.rindex("3")
+    winner = colored.plain.index("W")
+    assert str(colored.get_style_at_offset(console, plus_digit)) == "bold green"
+    assert str(colored.get_style_at_offset(console, minus_digit)) == "bold red"
+    assert str(colored.get_style_at_offset(console, winner)) == "bold yellow"
+
+
+def test_viewer_leaves_bare_shared_exponents_uncolored():
+    console = Console(force_terminal=True, color_system="standard")
+    line = "   L     14     1 1  1"
+    colored = colorize_viewer_line(line)
+
+    exponent = colored.plain.rindex("1")
+    assert str(colored.get_style_at_offset(console, exponent)) == "none"
 
 
 def test_viewer_keys_switch_sort_collapse_representation_and_details():
@@ -132,6 +166,7 @@ def test_help_is_an_in_place_pager_document():
     assert "EW interactive viewer" in session.document()
     assert "collapse / expand exact queues" in session.document()
     assert "automatically split" in session.document()
+    assert "green exponent" in session.document()
 
 
 def test_q_requests_exit():
